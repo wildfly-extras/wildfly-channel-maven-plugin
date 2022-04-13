@@ -2,8 +2,8 @@ name: Sample Channel
 streams:
   - groupId: io.undertow
     artifactId: undertow-core
-    #    version: 2.2.16.Final-redhat-00001
+    #version: 2.2.17.SP1-redhat-00001
     versionPattern: ".*redhat-.*"
   - groupId: org.jboss.marshalling
     artifactId: jboss-marshalling
-    version: 2.0.12.Final-redhat-00001
+    version: 2.0.9.Final-redhat-00001

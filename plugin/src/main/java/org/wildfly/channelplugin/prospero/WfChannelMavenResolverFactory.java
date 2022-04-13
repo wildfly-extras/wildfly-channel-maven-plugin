@@ -17,17 +17,21 @@
 
 package org.wildfly.channelplugin.prospero;
 
+import java.util.List;
+
 import org.wildfly.channel.spi.MavenVersionsResolver;
 
 public class WfChannelMavenResolverFactory implements MavenVersionsResolver.Factory {
     private final MavenSessionManager mavenSessionManager;
+    private final List<String> repositoryUrls;
 
-    public WfChannelMavenResolverFactory(MavenSessionManager mavenSessionManager) {
+    public WfChannelMavenResolverFactory(MavenSessionManager mavenSessionManager, List<String> repositoryUrls) {
         this.mavenSessionManager = mavenSessionManager;
+        this.repositoryUrls = repositoryUrls;
     }
 
     @Override
     public MavenVersionsResolver create() {
-        return new WfChannelMavenResolver(mavenSessionManager);
+        return new WfChannelMavenResolver(mavenSessionManager, repositoryUrls);
     }
 }

@@ -18,7 +18,7 @@
 package org.wildfly.channelplugin.prospero;
 
 import java.io.File;
-import java.util.Collections;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -54,11 +54,13 @@ public class WfChannelMavenResolver implements MavenVersionsResolver {
 
     private final MavenSessionManager mavenSessionManager;
 
-    WfChannelMavenResolver(MavenSessionManager mavenSessionManager) {
+    WfChannelMavenResolver(MavenSessionManager mavenSessionManager, List<String> repositoryUrls) {
         this.mavenSessionManager = mavenSessionManager;
-        remoteRepositories = Collections.singletonList(
-                new RemoteRepository.Builder("eap-7.4", "default", "https://download.devel.redhat.com/brewroot/repos/jb-eap-7.4-maven-build/latest/maven/")
-                        .build());
+        remoteRepositories = new ArrayList<>(repositoryUrls.size());
+        for (int i = 0; i < repositoryUrls.size(); i++) {
+            remoteRepositories.add(new RemoteRepository.Builder("repo-" + i, "default", repositoryUrls.get(i))
+                    .build());
+        }
         system = mavenSessionManager.newRepositorySystem();
         session = mavenSessionManager.newRepositorySystemSession(system, false);
     }

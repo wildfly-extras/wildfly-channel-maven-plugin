@@ -43,9 +43,10 @@
             <plugin>
                 <groupId>org.wildfly</groupId>
                 <artifactId>wildfly-channel-maven-plugin</artifactId>
-                <version>1.0-SNAPSHOT</version>
+                <version>@project.version@</version>
                 <configuration>
                     <channelFile>channel.yaml</channelFile>
+                    <localRepository>${maven.repo.local}</localRepository>
                 </configuration>
                 <executions>
                     <execution>

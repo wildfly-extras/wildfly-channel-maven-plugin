@@ -58,6 +58,18 @@ public class UpgradeComponentsMojo extends AbstractMojo {
     @Parameter(readonly = true, required = false, property = "channelGAV")
     String channelGAV;
 
+    /**
+     * Comma separated list of remote repositories URLs, that should be used to resolve artifacts.
+     */
+    @Parameter(readonly = true, required = false, property = "remoteRepositories")
+    List<String> remoteRepositories;
+
+    /**
+     * Local repository path.
+     */
+    @Parameter(readonly = true, property = "localRepository")
+    String localRepository;
+
     @Parameter(defaultValue = "${project}", readonly = true)
     MavenProject project;
 
@@ -78,10 +90,14 @@ public class UpgradeComponentsMojo extends AbstractMojo {
 
     private void init() throws MojoExecutionException{
         channel = loadChannel();
-        MavenSessionManager mavenSessionManager = new MavenSessionManager();
+        MavenSessionManager mavenSessionManager;
+        if (StringUtils.isNotBlank(localRepository)) {
+            mavenSessionManager = new MavenSessionManager(Path.of(localRepository));
+        } else {
+            mavenSessionManager = new MavenSessionManager();
+        }
         session = new ChannelSession(Collections.singletonList(channel),
-                new WfChannelMavenResolverFactory(mavenSessionManager));
-
+                new WfChannelMavenResolverFactory(mavenSessionManager, remoteRepositories));
     }
 
     @Override

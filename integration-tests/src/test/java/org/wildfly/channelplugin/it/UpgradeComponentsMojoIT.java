@@ -1,21 +1,21 @@
 package org.wildfly.channelplugin.it;
 
 import com.soebes.itf.jupiter.extension.MavenJupiterExtension;
+import com.soebes.itf.jupiter.extension.MavenPredefinedRepository;
 import com.soebes.itf.jupiter.extension.MavenTest;
 import com.soebes.itf.jupiter.maven.MavenExecutionResult;
 import org.apache.maven.model.Model;
 import org.assertj.core.api.Assertions;
-import org.junit.jupiter.api.Test;
-import org.wildfly.channelplugin.utils.DependencyModel;
 import org.wildfly.channel.version.VersionMatcher;
+import org.wildfly.channelplugin.utils.DependencyModel;
 
 import static com.soebes.itf.extension.assertj.MavenExecutionResultAssert.assertThat;
 
 @MavenJupiterExtension
+@MavenPredefinedRepository("maven-repo")
 public class UpgradeComponentsMojoIT {
 
     @MavenTest
-    @Test
     void basic_project_test_case(MavenExecutionResult result) {
         assertThat(result).isSuccessful();
 
