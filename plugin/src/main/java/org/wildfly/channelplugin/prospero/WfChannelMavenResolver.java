@@ -28,9 +28,6 @@ import org.eclipse.aether.RepositorySystem;
 import org.eclipse.aether.artifact.Artifact;
 import org.eclipse.aether.artifact.DefaultArtifact;
 import org.eclipse.aether.repository.RemoteRepository;
-import org.eclipse.aether.resolution.ArtifactRequest;
-import org.eclipse.aether.resolution.ArtifactResolutionException;
-import org.eclipse.aether.resolution.ArtifactResult;
 import org.eclipse.aether.resolution.VersionRangeRequest;
 import org.eclipse.aether.resolution.VersionRangeResolutionException;
 import org.eclipse.aether.resolution.VersionRangeResult;
@@ -46,6 +43,8 @@ import static java.util.Objects.requireNonNull;
 public class WfChannelMavenResolver implements MavenVersionsResolver {
 
     public static final Logger logger = LoggerFactory.getLogger(WfChannelMavenResolver.class);
+
+    private static final File NULL_FILE = new File("/dev/null");
 
     private final RepositorySystem system;
     private final DefaultRepositorySystemSession session;
@@ -90,22 +89,15 @@ public class WfChannelMavenResolver implements MavenVersionsResolver {
     @Override
     public File resolveLatestVersionFromMavenMetadata(String groupId, String artifactId, String extension,
             String classifier) throws UnresolvedMavenArtifactException {
+        // artifact file is not needed
         return null;
     }
 
     @Override
-    public File resolveArtifact(String groupId, String artifactId, String extension, String classifier, String version) throws UnresolvedMavenArtifactException {
-        Artifact artifact = new DefaultArtifact(groupId, artifactId, classifier, extension, version);
-
-        ArtifactRequest request = new ArtifactRequest();
-        request.setArtifact(artifact);
-        request.setRepositories(remoteRepositories);
-        try {
-            ArtifactResult result = system.resolveArtifact(session, request);
-            return result.getArtifact().getFile();
-        } catch (ArtifactResolutionException e) {
-            throw new UnresolvedMavenArtifactException("Unable to resolve artifact " + artifact, e);
-        }
+    public File resolveArtifact(String groupId, String artifactId, String extension, String classifier, String version)
+            throws UnresolvedMavenArtifactException {
+        // artifact file is not needed, but returning null is not allowed ATM
+        return NULL_FILE;
     }
 
 }
