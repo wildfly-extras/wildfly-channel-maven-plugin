@@ -14,11 +14,20 @@
         <maven.compiler.target>11</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 
-        <undertow.version>2.2.5.Final-redhat-00001</undertow.version>
+        <undertow.version>2.2.5.Final-redhat-00001</undertow.version> <!-- version defined via a property -->
     </properties>
 
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>org.jboss.marshalling</groupId>
+                <artifactId>jboss-marshalling</artifactId>
+                <version>2.0.6.Final-redhat-00001</version> <!-- version defined directly in the version element -->
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
     <dependencies>
-        <!-- version defined via a property: -->
         <dependency>
             <groupId>io.undertow</groupId>
             <artifactId>undertow-core</artifactId>
@@ -28,13 +37,6 @@
             <groupId>io.undertow</groupId>
             <artifactId>undertow-servlet</artifactId>
             <version>${undertow.version}</version>
-        </dependency>
-
-        <!-- version defined directly in version element: -->
-        <dependency>
-            <groupId>org.jboss.marshalling</groupId>
-            <artifactId>jboss-marshalling</artifactId>
-            <version>2.0.6.Final-redhat-00001</version>
         </dependency>
     </dependencies>
 

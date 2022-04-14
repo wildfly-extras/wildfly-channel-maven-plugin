@@ -7,3 +7,6 @@ streams:
   - groupId: org.jboss.marshalling
     artifactId: jboss-marshalling
     version: 2.0.9.Final-redhat-00001
+  - groupId: org.jboss
+    artifactId: extra-dep
+    version: 1.0.0.Final

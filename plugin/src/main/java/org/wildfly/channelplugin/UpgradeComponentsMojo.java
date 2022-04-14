@@ -5,6 +5,7 @@ import java.net.MalformedURLException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -20,6 +21,7 @@ import org.apache.maven.plugins.annotations.Mojo;
 import org.apache.maven.plugins.annotations.Parameter;
 import org.apache.maven.project.MavenProject;
 import org.commonjava.maven.atlas.ident.ref.ArtifactRef;
+import org.commonjava.maven.atlas.ident.ref.SimpleArtifactRef;
 import org.commonjava.maven.ext.common.ManipulationException;
 import org.commonjava.maven.ext.common.model.Project;
 import org.commonjava.maven.ext.core.ManipulationSession;
@@ -28,7 +30,9 @@ import org.wildfly.channel.Channel;
 import org.wildfly.channel.ChannelMapper;
 import org.wildfly.channel.ChannelSession;
 import org.wildfly.channel.MavenArtifact;
+import org.wildfly.channel.Stream;
 import org.wildfly.channel.UnresolvedMavenArtifactException;
+import org.wildfly.channelplugin.channel.ComparableMavenArtifact;
 import org.wildfly.channelplugin.manipulation.PomWriter;
 import org.wildfly.channelplugin.prospero.MavenSessionManager;
 import org.wildfly.channelplugin.prospero.WfChannelMavenResolverFactory;
@@ -71,6 +75,15 @@ public class UpgradeComponentsMojo extends AbstractMojo {
     @Parameter(readonly = true, property = "localRepository")
     String localRepository;
 
+    /**
+     * Inject dependencies from channel definition that are missing in the project (supposedly transitive dependencies)
+     * into dependency management section?
+     *
+     * Experimental
+     */
+    @Parameter(readonly = true, property = "injectMissingDependencies", defaultValue = "false")
+    boolean injectMissingDependencies;
+
     @Parameter(defaultValue = "${project}", readonly = true)
     MavenProject project;
 
@@ -87,7 +100,7 @@ public class UpgradeComponentsMojo extends AbstractMojo {
     ManipulationSession manipulationSession;
 
     Channel channel;
-    ChannelSession session;
+    ChannelSession channelSession;
 
     private void init() throws MojoExecutionException{
         channel = loadChannel();
@@ -97,7 +110,7 @@ public class UpgradeComponentsMojo extends AbstractMojo {
         } else {
             mavenSessionManager = new MavenSessionManager();
         }
-        session = new ChannelSession(Collections.singletonList(channel),
+        channelSession = new ChannelSession(Collections.singletonList(channel),
                 new WfChannelMavenResolverFactory(mavenSessionManager, remoteRepositories));
     }
 
@@ -116,24 +129,23 @@ public class UpgradeComponentsMojo extends AbstractMojo {
      * Processes single maven module
      */
     private void processProject(Project project) throws ManipulationException {
-        List<Map.Entry<ArtifactRef, Dependency>> dependencies = new ArrayList<>();
-        dependencies.addAll(project.getResolvedManagedDependencies(manipulationSession).entrySet());
-        dependencies.addAll(project.getResolvedDependencies(manipulationSession).entrySet());
+        Map<ArtifactRef, Dependency> projectDependencies = new HashMap<>();
+        projectDependencies.putAll(project.getResolvedManagedDependencies(manipulationSession));
+        projectDependencies.putAll(project.getResolvedDependencies(manipulationSession));
 
-        if (dependencies.size() == 0) {
+        if (projectDependencies.size() == 0) {
             getLog().info("No dependencies found in " + project.getArtifactId());
         }
 
         ArrayList<MavenArtifact> dependenciesToUpgrade = new ArrayList<>();
-        for (Map.Entry<ArtifactRef, Dependency> entry : dependencies) {
-            ArtifactRef artifactRef = entry.getKey();
+        for (ArtifactRef artifactRef : projectDependencies.keySet()) {
 
             if (artifactRef.getVersionStringRaw() == null) {
-                getLog().info("Null version: " + artifactRef);
+                getLog().warn("Null version: " + artifactRef);
             }
 
             try {
-                MavenArtifact mavenArtifact = session.resolveLatestMavenArtifact(artifactRef.getGroupId(),
+                MavenArtifact mavenArtifact = channelSession.resolveLatestMavenArtifact(artifactRef.getGroupId(),
                         artifactRef.getArtifactId(), artifactRef.getType(), artifactRef.getClassifier());
 
                 if (!mavenArtifact.getVersion().equals(artifactRef.getVersionString())) {
@@ -147,7 +159,32 @@ public class UpgradeComponentsMojo extends AbstractMojo {
             }
         }
 
-        PomWriter.manipulatePom(project, dependenciesToUpgrade);
+        // Following is an experiment to inject missing dependencies into the project's dependencyManagement section.
+        // The goal is to have a way to override transitive dependencies, this is a simplistic approach. We are missing
+        // metadata about the dependency type and classifier.
+        ArrayList<MavenArtifact> dependenciesToInject = new ArrayList<>();
+        if (injectMissingDependencies) {
+            for (Stream stream : channel.getStreams()) {
+                try {
+                    MavenArtifact mavenArtifact = channelSession.resolveLatestMavenArtifact(stream.getGroupId(),
+                            stream.getArtifactId(), "jar", null);
+                    SimpleArtifactRef artifactRef = new SimpleArtifactRef(mavenArtifact.getGroupId(),
+                            mavenArtifact.getArtifactId(), mavenArtifact.getVersion(), mavenArtifact.getExtension(),
+                            mavenArtifact.getClassifier());
+                    ComparableMavenArtifact comparableMavenArtifact = new ComparableMavenArtifact(mavenArtifact);
+
+                    if (!projectDependencies.containsKey(artifactRef) && !dependenciesToUpgrade.contains(
+                            comparableMavenArtifact)) {
+                        dependenciesToInject.add(mavenArtifact);
+                    }
+                } catch (UnresolvedMavenArtifactException e) {
+                    getLog().debug("Can't resolve latest stream version: "
+                            + stream.getGroupId() + ":" + stream.getArtifactId());
+                }
+            }
+        }
+
+        PomWriter.manipulatePom(project, dependenciesToUpgrade, dependenciesToInject);
     }
 
     private Channel loadChannel() throws MojoExecutionException {
