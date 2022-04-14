@@ -14,6 +14,13 @@
         This maven plugin overrides dependencies versions in a Maven project according to Wildfly channel definition.
     </description>
 
+    <scm>
+        <connection>scm:git:git@github.com:TomasHofman/wildfly-channel-maven-plugin.git</connection>
+        <developerConnection>scm:git:git@github.com:TomasHofman/wildfly-channel-maven-plugin.git</developerConnection>
+        <url>https://github.com/TomasHofman/wildfly-channel-maven-plugin</url>
+        <tag>HEAD</tag>
+    </scm>
+
     <modules>
         <module>plugin</module>
         <module>integration-tests</module>
