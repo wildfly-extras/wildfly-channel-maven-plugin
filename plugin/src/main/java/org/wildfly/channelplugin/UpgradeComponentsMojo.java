@@ -7,6 +7,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 import javax.inject.Inject;
 
@@ -102,33 +103,10 @@ public class UpgradeComponentsMojo extends AbstractMojo {
 
     @Override
     public void execute() throws MojoExecutionException {
-        // TODO: Rather than processing whole Maven module structure from the top level module execution, process just
-        //  the current module during its' own Maven plugin execution.
-
-        // skip everything except the root project - the whole project structure is traversed at once from the root
-        // project execution
-        if (!mavenSession.getCurrentProject().isExecutionRoot()) {
-            return;
-        }
-
         init();
 
         try {
-            List<Project> projects = pomIO.parseProject(project.getModel().getPomFile());
-            /*
-            List<Project> inheritanceRootList = projects.stream().filter(Project::isInheritanceRoot).collect(
-                    Collectors.toList());
-            if (inheritanceRootList.size() != 1) {
-                throw new MojoExecutionException("Couldn't find the root project, "
-                        + inheritanceRootList.size() + " root projects found.");
-            }
-            Project rootProject = inheritanceRootList.get(0);
-            */
-
-            for (Project project: projects) {
-                processProject(project);
-            }
-
+            processProject(parseProject());
         } catch (ManipulationException e) {
             throw new MojoExecutionException("Project parsing failed", e);
         }
@@ -143,7 +121,7 @@ public class UpgradeComponentsMojo extends AbstractMojo {
         dependencies.addAll(project.getResolvedDependencies(manipulationSession).entrySet());
 
         if (dependencies.size() == 0) {
-            getLog().info("No dependencies in " + project.getArtifactId());
+            getLog().info("No dependencies found in " + project.getArtifactId());
         }
 
         ArrayList<MavenArtifact> dependenciesToUpgrade = new ArrayList<>();
@@ -190,6 +168,24 @@ public class UpgradeComponentsMojo extends AbstractMojo {
         } else {
             throw new MojoExecutionException("Either channelFile or channelGAV parameter needs to be set.");
         }
+    }
+
+    /**
+     * This returns a PME representation of currently processed Maven module.
+     *
+     * PME (POM Manipulation Extension) is subproject of the PNC (Project Newcastle) productization system. PME does
+     * a very similar job to what this Maven module does.
+     */
+    private Project parseProject() throws MojoExecutionException, ManipulationException {
+        List<Project> projects = pomIO.parseProject(project.getModel().getPomFile());
+        List<Project> roots = projects.stream().filter(Project::isExecutionRoot)
+                .collect(Collectors.toList());
+        if (roots.size() != 1) {
+            throw new MojoExecutionException("Couldn't determine the execution root project, candidates are: ["
+                    + roots.stream().map(Project::getArtifactId).collect(Collectors.joining(", "))
+                    + "]");
+        }
+        return roots.get(0);
     }
 
 }
