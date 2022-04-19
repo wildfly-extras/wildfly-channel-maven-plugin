@@ -21,17 +21,17 @@ import java.util.List;
 
 import org.wildfly.channel.spi.MavenVersionsResolver;
 
-public class WfChannelMavenResolverFactory implements MavenVersionsResolver.Factory {
-    private final MavenSessionManager mavenSessionManager;
+public class DefaultMavenVersionsResolverFactory implements MavenVersionsResolver.Factory {
     private final List<String> repositoryUrls;
+    private final String localRepositoryPath;
 
-    public WfChannelMavenResolverFactory(MavenSessionManager mavenSessionManager, List<String> repositoryUrls) {
-        this.mavenSessionManager = mavenSessionManager;
+    public DefaultMavenVersionsResolverFactory(List<String> repositoryUrls, String localRepositoryPath) {
         this.repositoryUrls = repositoryUrls;
+        this.localRepositoryPath = localRepositoryPath;
     }
 
     @Override
     public MavenVersionsResolver create() {
-        return new WfChannelMavenResolver(mavenSessionManager, repositoryUrls);
+        return new DefaultMavenVersionsResolver(repositoryUrls, localRepositoryPath);
     }
 }

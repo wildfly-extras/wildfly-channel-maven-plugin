@@ -29,17 +29,26 @@ import javax.net.ssl.SSLContext;
 
 import org.apache.http.conn.ssl.NoopHostnameVerifier;
 import org.apache.http.ssl.SSLContexts;
+import org.apache.maven.repository.internal.MavenRepositorySystemUtils;
 import org.eclipse.aether.DefaultRepositorySystemSession;
 import org.eclipse.aether.RepositorySystem;
 import org.eclipse.aether.artifact.Artifact;
 import org.eclipse.aether.artifact.DefaultArtifact;
+import org.eclipse.aether.connector.basic.BasicRepositoryConnectorFactory;
+import org.eclipse.aether.impl.DefaultServiceLocator;
 import org.eclipse.aether.repository.Authentication;
 import org.eclipse.aether.repository.AuthenticationContext;
 import org.eclipse.aether.repository.AuthenticationDigest;
+import org.eclipse.aether.repository.LocalRepository;
 import org.eclipse.aether.repository.RemoteRepository;
 import org.eclipse.aether.resolution.VersionRangeRequest;
 import org.eclipse.aether.resolution.VersionRangeResolutionException;
 import org.eclipse.aether.resolution.VersionRangeResult;
+import org.eclipse.aether.spi.connector.RepositoryConnectorFactory;
+import org.eclipse.aether.spi.connector.transport.TransporterFactory;
+import org.eclipse.aether.transfer.MetadataNotFoundException;
+import org.eclipse.aether.transport.file.FileTransporterFactory;
+import org.eclipse.aether.transport.http.HttpTransporterFactory;
 import org.eclipse.aether.util.repository.AuthenticationBuilder;
 import org.eclipse.aether.version.Version;
 import org.slf4j.Logger;
@@ -49,24 +58,22 @@ import org.wildfly.channel.spi.MavenVersionsResolver;
 import static java.util.Collections.emptySet;
 import static java.util.Objects.requireNonNull;
 
-public class WfChannelMavenResolver implements MavenVersionsResolver {
+public class DefaultMavenVersionsResolver implements MavenVersionsResolver {
 
-    public static final Logger logger = LoggerFactory.getLogger(WfChannelMavenResolver.class);
+    public static final Logger logger = LoggerFactory.getLogger(DefaultMavenVersionsResolver.class);
 
     private static final File NULL_FILE = new File("/dev/null");
 
     private final RepositorySystem system;
     private final DefaultRepositorySystemSession session;
-
     private final List<RemoteRepository> remoteRepositories;
+    private final String localRepositoryPath;
 
-    private final MavenSessionManager mavenSessionManager;
-
-    WfChannelMavenResolver(MavenSessionManager mavenSessionManager, List<String> repositoryUrls) {
-        this.mavenSessionManager = mavenSessionManager;
-        remoteRepositories = new ArrayList<>(repositoryUrls.size());
-        for (int i = 0; i < repositoryUrls.size(); i++) {
-            logger.info("Adding remote repository {}", repositoryUrls.get(i));
+    DefaultMavenVersionsResolver(List<String> remoteRepositoryUrls, String localRepositoryPath) {
+        this.localRepositoryPath = localRepositoryPath;
+        remoteRepositories = new ArrayList<>(remoteRepositoryUrls.size());
+        for (int i = 0; i < remoteRepositoryUrls.size(); i++) {
+            logger.info("Adding remote repository {}", remoteRepositoryUrls.get(i));
 
             // hack to disable TLS verification
             SSLContext sslcontext;
@@ -76,7 +83,7 @@ public class WfChannelMavenResolver implements MavenVersionsResolver {
                 throw new RuntimeException("Couldn't build SSLContext", e);
             }
 
-            remoteRepositories.add(new RemoteRepository.Builder("repo-" + i, "default", repositoryUrls.get(i))
+            remoteRepositories.add(new RemoteRepository.Builder("repo-" + i, "default", remoteRepositoryUrls.get(i))
                     .setAuthentication(new AuthenticationBuilder()
                             .addHostnameVerifier(NoopHostnameVerifier.INSTANCE)
                             .addCustom(new Authentication() {
@@ -94,8 +101,8 @@ public class WfChannelMavenResolver implements MavenVersionsResolver {
                     .build());
         }
 
-        system = mavenSessionManager.newRepositorySystem();
-        session = mavenSessionManager.newRepositorySystemSession(system, false);
+        system = newRepositorySystem();
+        session = newRepositorySystemSession();
     }
 
     @Override
@@ -117,12 +124,7 @@ public class WfChannelMavenResolver implements MavenVersionsResolver {
                     .stream()
                     .map(Version::toString)
                     .collect(Collectors.toSet());
-            if (versionRangeResult.getExceptions().size() > 0) {
-                logger.warn("Error when resolving {}:{} versions, printing exceptions bellow:", groupId, artifact);
-                for (Exception e : versionRangeResult.getExceptions()) {
-                    logger.warn("", e);
-                }
-            }
+            reportExceptions(versionRangeResult);
             logger.trace("All versions in the repositories: {}", versions);
             return versions;
         } catch (VersionRangeResolutionException e) {
@@ -142,6 +144,48 @@ public class WfChannelMavenResolver implements MavenVersionsResolver {
             String version) {
         // artifact file is not needed, but returning null is not allowed ATM
         return NULL_FILE;
+    }
+
+    private static void reportExceptions(VersionRangeResult versionRangeResult) {
+        // report all exceptions that are not MetadataNotFoundException, metadata are always missing in local
+        // repositories
+        if (versionRangeResult.getExceptions() != null) {
+            List<Exception> exceptions = versionRangeResult.getExceptions()
+                    .stream()
+                    .filter(e -> !(e instanceof MetadataNotFoundException))
+                    .collect(Collectors.toList());
+            if (exceptions.size() > 0) {
+                Artifact artifact = versionRangeResult.getRequest().getArtifact();
+                logger.warn("Error when resolving {}:{} versions, printing exceptions bellow:",
+                        artifact.getGroupId(), artifact.getArtifactId());
+                for (Exception e : exceptions) {
+                    logger.warn("", e);
+                }
+            }
+        }
+    }
+
+    private DefaultRepositorySystemSession newRepositorySystemSession() {
+        DefaultRepositorySystemSession session = MavenRepositorySystemUtils.newSession();
+
+        LocalRepository localRepo = new LocalRepository(this.localRepositoryPath);
+        session.setLocalRepositoryManager(this.system.newLocalRepositoryManager(session, localRepo));
+        session.setOffline(false);
+        return session;
+    }
+
+    public RepositorySystem newRepositorySystem() {
+        final DefaultServiceLocator locator = MavenRepositorySystemUtils.newServiceLocator();
+        locator.addService(RepositoryConnectorFactory.class, BasicRepositoryConnectorFactory.class);
+        locator.addService(TransporterFactory.class, HttpTransporterFactory.class);
+        locator.addService(TransporterFactory.class, FileTransporterFactory.class);
+        locator.setErrorHandler(new DefaultServiceLocator.ErrorHandler() {
+            @Override
+            public void serviceCreationFailed(Class<?> type, Class<?> impl, Throwable exception) {
+                throw new RuntimeException("Failed to initiate maven repository system");
+            }
+        });
+        return locator.getService(RepositorySystem.class);
     }
 
 }

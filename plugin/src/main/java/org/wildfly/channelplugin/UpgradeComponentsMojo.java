@@ -34,8 +34,7 @@ import org.wildfly.channel.Stream;
 import org.wildfly.channel.UnresolvedMavenArtifactException;
 import org.wildfly.channelplugin.channel.ComparableMavenArtifact;
 import org.wildfly.channelplugin.manipulation.PomWriter;
-import org.wildfly.channelplugin.prospero.MavenSessionManager;
-import org.wildfly.channelplugin.prospero.WfChannelMavenResolverFactory;
+import org.wildfly.channelplugin.prospero.DefaultMavenVersionsResolverFactory;
 
 /**
  * This tasks overrides dependencies versions according to provided channel file.
@@ -46,6 +45,8 @@ import org.wildfly.channelplugin.prospero.WfChannelMavenResolverFactory;
  */
 @Mojo(name = "upgrade", requiresProject = true, requiresDirectInvocation = true)
 public class UpgradeComponentsMojo extends AbstractMojo {
+
+    private static final String LOCAL_MAVEN_REPO = System.getProperty("user.home") + "/.m2/repository";
 
     /**
      * Path to the channel definition file on a local filesystem.
@@ -102,16 +103,13 @@ public class UpgradeComponentsMojo extends AbstractMojo {
     Channel channel;
     ChannelSession channelSession;
 
-    private void init() throws MojoExecutionException{
-        channel = loadChannel();
-        MavenSessionManager mavenSessionManager;
-        if (StringUtils.isNotBlank(localRepository)) {
-            mavenSessionManager = new MavenSessionManager(Path.of(localRepository));
-        } else {
-            mavenSessionManager = new MavenSessionManager();
+    private void init() throws MojoExecutionException {
+        if (localRepository == null) {
+            localRepository = LOCAL_MAVEN_REPO;
         }
+        channel = loadChannel();
         channelSession = new ChannelSession(Collections.singletonList(channel),
-                new WfChannelMavenResolverFactory(mavenSessionManager, remoteRepositories));
+                new DefaultMavenVersionsResolverFactory(remoteRepositories, localRepository));
     }
 
     @Override
