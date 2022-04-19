@@ -34,7 +34,6 @@ import org.eclipse.aether.resolution.VersionRangeResult;
 import org.eclipse.aether.version.Version;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.wildfly.channel.UnresolvedMavenArtifactException;
 import org.wildfly.channel.spi.MavenVersionsResolver;
 
 import static java.util.Collections.emptySet;
@@ -57,6 +56,7 @@ public class WfChannelMavenResolver implements MavenVersionsResolver {
         this.mavenSessionManager = mavenSessionManager;
         remoteRepositories = new ArrayList<>(repositoryUrls.size());
         for (int i = 0; i < repositoryUrls.size(); i++) {
+            logger.info("Adding remote repository {}", repositoryUrls.get(i));
             remoteRepositories.add(new RemoteRepository.Builder("repo-" + i, "default", repositoryUrls.get(i))
                     .build());
         }
@@ -68,8 +68,8 @@ public class WfChannelMavenResolver implements MavenVersionsResolver {
     public Set<String> getAllVersions(String groupId, String artifactId, String extension, String classifier) {
         requireNonNull(groupId);
         requireNonNull(artifactId);
-        logger.trace("Resolving the latest version of %s:%s in repositories: %s",
-                     groupId, artifactId, remoteRepositories.stream().map(r -> r.getUrl()).collect(Collectors.joining(",")));
+        logger.trace("Resolving the latest version of {}:{} in repositories: {}",
+                     groupId, artifactId, remoteRepositories.stream().map(RemoteRepository::getUrl).collect(Collectors.joining(",")));
 
         Artifact artifact = new DefaultArtifact(groupId, artifactId, classifier, extension, "[0,)");
         VersionRangeRequest versionRangeRequest = new VersionRangeRequest();
@@ -79,7 +79,13 @@ public class WfChannelMavenResolver implements MavenVersionsResolver {
         try {
             VersionRangeResult versionRangeResult = system.resolveVersionRange(session, versionRangeRequest);
             Set<String> versions = versionRangeResult.getVersions().stream().map(Version::toString).collect(Collectors.toSet());
-            logger.trace("All versions in the repositories: %s", versions);
+            if (versionRangeResult.getExceptions().size() > 0) {
+                logger.warn("Error when resolving {}:{} versions, printing exceptions bellow:", groupId, artifact);
+                for (Exception e: versionRangeResult.getExceptions()) {
+                    logger.warn("", e);
+                }
+            }
+            logger.trace("All versions in the repositories: {}", versions);
             return versions;
         } catch (VersionRangeResolutionException e) {
             return emptySet();
@@ -87,15 +93,13 @@ public class WfChannelMavenResolver implements MavenVersionsResolver {
     }
 
     @Override
-    public File resolveLatestVersionFromMavenMetadata(String groupId, String artifactId, String extension,
-            String classifier) throws UnresolvedMavenArtifactException {
+    public File resolveLatestVersionFromMavenMetadata(String groupId, String artifactId, String extension, String classifier) {
         // artifact file is not needed
         return null;
     }
 
     @Override
-    public File resolveArtifact(String groupId, String artifactId, String extension, String classifier, String version)
-            throws UnresolvedMavenArtifactException {
+    public File resolveArtifact(String groupId, String artifactId, String extension, String classifier, String version) {
         // artifact file is not needed, but returning null is not allowed ATM
         return NULL_FILE;
     }
