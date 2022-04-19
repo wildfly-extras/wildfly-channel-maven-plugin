@@ -68,10 +68,12 @@ public class DefaultMavenVersionsResolver implements MavenVersionsResolver {
     private final DefaultRepositorySystemSession session;
     private final List<RemoteRepository> remoteRepositories;
     private final String localRepositoryPath;
+    private final boolean disableTlsVerification;
 
-    DefaultMavenVersionsResolver(List<String> remoteRepositoryUrls, String localRepositoryPath) {
+    DefaultMavenVersionsResolver(List<String> remoteRepositoryUrls, String localRepositoryPath, boolean disableTlsVerification) {
+        this.disableTlsVerification = disableTlsVerification;
         this.localRepositoryPath = localRepositoryPath;
-        remoteRepositories = new ArrayList<>(remoteRepositoryUrls.size());
+        this.remoteRepositories = new ArrayList<>(remoteRepositoryUrls.size());
         for (int i = 0; i < remoteRepositoryUrls.size(); i++) {
             logger.info("Adding remote repository {}", remoteRepositoryUrls.get(i));
 
@@ -83,22 +85,24 @@ public class DefaultMavenVersionsResolver implements MavenVersionsResolver {
                 throw new RuntimeException("Couldn't build SSLContext", e);
             }
 
-            remoteRepositories.add(new RemoteRepository.Builder("repo-" + i, "default", remoteRepositoryUrls.get(i))
-                    .setAuthentication(new AuthenticationBuilder()
-                            .addHostnameVerifier(NoopHostnameVerifier.INSTANCE)
-                            .addCustom(new Authentication() {
-                                @Override
-                                public void fill(AuthenticationContext context, String key, Map<String, String> data) {
-                                    context.put(AuthenticationContext.SSL_CONTEXT, sslcontext);
-                                }
+            RemoteRepository.Builder remoteRepositoryBuilder = new RemoteRepository.Builder("repo-" + i, "default",
+                    remoteRepositoryUrls.get(i));
+            if (this.disableTlsVerification) {
+                remoteRepositoryBuilder.setAuthentication(new AuthenticationBuilder()
+                        .addHostnameVerifier(NoopHostnameVerifier.INSTANCE)
+                        .addCustom(new Authentication() {
+                            @Override
+                            public void fill(AuthenticationContext context, String key, Map<String, String> data) {
+                                context.put(AuthenticationContext.SSL_CONTEXT, sslcontext);
+                            }
 
-                                @Override
-                                public void digest(AuthenticationDigest digest) {
-                                    digest.update(AuthenticationContext.SSL_CONTEXT, sslcontext.getClass().getName());
-                                }
-                            })
-                            .build())
-                    .build());
+                            @Override
+                            public void digest(AuthenticationDigest digest) {
+                                digest.update(AuthenticationContext.SSL_CONTEXT, sslcontext.getClass().getName());
+                            }
+                        }).build());
+            }
+            remoteRepositories.add(remoteRepositoryBuilder.build());
         }
 
         system = newRepositorySystem();

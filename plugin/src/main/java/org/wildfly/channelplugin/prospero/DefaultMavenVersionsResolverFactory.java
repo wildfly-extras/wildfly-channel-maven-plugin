@@ -24,14 +24,17 @@ import org.wildfly.channel.spi.MavenVersionsResolver;
 public class DefaultMavenVersionsResolverFactory implements MavenVersionsResolver.Factory {
     private final List<String> repositoryUrls;
     private final String localRepositoryPath;
+    private final boolean disableTlsVerification;
 
-    public DefaultMavenVersionsResolverFactory(List<String> repositoryUrls, String localRepositoryPath) {
+    public DefaultMavenVersionsResolverFactory(List<String> repositoryUrls, String localRepositoryPath,
+            boolean disableTlsVerification) {
         this.repositoryUrls = repositoryUrls;
         this.localRepositoryPath = localRepositoryPath;
+        this.disableTlsVerification = disableTlsVerification;
     }
 
     @Override
     public MavenVersionsResolver create() {
-        return new DefaultMavenVersionsResolver(repositoryUrls, localRepositoryPath);
+        return new DefaultMavenVersionsResolver(repositoryUrls, localRepositoryPath, disableTlsVerification);
     }
 }

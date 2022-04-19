@@ -85,6 +85,9 @@ public class UpgradeComponentsMojo extends AbstractMojo {
     @Parameter(readonly = true, property = "injectMissingDependencies", defaultValue = "false")
     boolean injectMissingDependencies;
 
+    @Parameter(readonly = true, property = "disableTlsVerification", defaultValue = "false")
+    boolean disableTlsVerification;
+
     @Parameter(defaultValue = "${project}", readonly = true)
     MavenProject project;
 
@@ -109,7 +112,7 @@ public class UpgradeComponentsMojo extends AbstractMojo {
         }
         channel = loadChannel();
         channelSession = new ChannelSession(Collections.singletonList(channel),
-                new DefaultMavenVersionsResolverFactory(remoteRepositories, localRepository));
+                new DefaultMavenVersionsResolverFactory(remoteRepositories, localRepository, disableTlsVerification));
     }
 
     @Override
