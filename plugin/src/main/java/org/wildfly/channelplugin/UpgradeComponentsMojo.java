@@ -155,7 +155,7 @@ public class UpgradeComponentsMojo extends AbstractMojo {
                     dependenciesToUpgrade.add(mavenArtifact);
                 }
             } catch (UnresolvedMavenArtifactException e) {
-                getLog().debug("Can't resolve artifact: " + artifactRef);
+                getLog().warn("Can't resolve artifact: " + artifactRef, e);
             }
         }
 
@@ -178,8 +178,8 @@ public class UpgradeComponentsMojo extends AbstractMojo {
                         dependenciesToInject.add(mavenArtifact);
                     }
                 } catch (UnresolvedMavenArtifactException e) {
-                    getLog().debug("Can't resolve latest stream version: "
-                            + stream.getGroupId() + ":" + stream.getArtifactId());
+                    getLog().warn("Can't resolve latest stream version: "
+                            + stream.getGroupId() + ":" + stream.getArtifactId(), e);
                 }
             }
         }
