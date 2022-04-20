@@ -7,6 +7,7 @@ import java.net.URL;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Properties;
 
 import javax.xml.stream.XMLInputFactory;
 import javax.xml.stream.XMLStreamException;
@@ -55,6 +56,20 @@ public class PomWriterTestCase {
                     Assertions.assertThat(d).isPresent();
                     Assertions.assertThat(d.get().getVersion()).isEqualTo("2.4.0");
                 });
+    }
+
+    @Test
+    public void testFollowProperties() {
+        Properties properties = new Properties();
+        properties.put("version.a", "1.0");
+        properties.put("version.b", "${version.c}");
+        properties.put("version.c", "${version.d}");
+        properties.put("version.d", "2.0");
+
+        Assertions.assertThat(PomWriter.followProperties(properties, "version.a")).isEqualTo("version.a");
+        Assertions.assertThat(PomWriter.followProperties(properties, "version.b")).isEqualTo("version.d");
+        Assertions.assertThat(PomWriter.followProperties(properties, "version.c")).isEqualTo("version.d");
+        Assertions.assertThat(PomWriter.followProperties(properties, "version.d")).isEqualTo("version.d");
     }
 
     private DependencyModel readDependencyModel() throws IOException, ManipulationException {

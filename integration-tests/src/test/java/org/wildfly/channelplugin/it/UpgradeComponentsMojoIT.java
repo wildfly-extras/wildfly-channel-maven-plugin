@@ -53,6 +53,15 @@ public class UpgradeComponentsMojoIT {
             Assertions.assertThat(d).isPresent();
             Assertions.assertThat(d.get().getVersion()).isEqualTo("1.0.0.Final");
         });
+
+        // verify version specified by recursive property reference
+        Assertions.assertThat(dependencyModel.getDependency("commons-io", "commons-io", "jar", null))
+                .satisfies(o -> {
+                    Assertions.assertThat(o.isPresent());
+                    Assertions.assertThat(o.get().getVersion()).isEqualTo("${commons.version}");
+                });
+        Assertions.assertThat(model.getProperties().get("commons.version")).isEqualTo("${commons2.version}");
+        Assertions.assertThat(model.getProperties().get("commons2.version")).isEqualTo("2.10.0.redhat-00001");
     }
 
 }

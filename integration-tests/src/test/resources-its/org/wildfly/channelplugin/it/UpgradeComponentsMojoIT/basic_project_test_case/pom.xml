@@ -15,6 +15,8 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 
         <undertow.version>2.2.5.Final-redhat-00001</undertow.version> <!-- version defined via a property -->
+        <commons.version>${commons2.version}</commons.version>
+        <commons2.version>2.10.0.redhat-00001</commons2.version>
     </properties>
 
     <dependencyManagement>
@@ -23,6 +25,11 @@
                 <groupId>org.jboss.marshalling</groupId>
                 <artifactId>jboss-marshalling</artifactId>
                 <version>2.0.6.Final-redhat-00001</version> <!-- version defined directly in the version element -->
+            </dependency>
+            <dependency>
+                <groupId>commons-io</groupId>
+                <artifactId>commons-io</artifactId>
+                <version>${commons.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>

@@ -5,6 +5,7 @@ import java.io.IOException;
 import java.io.Writer;
 import java.util.ArrayList;
 import java.util.Optional;
+import java.util.Properties;
 import java.util.Stack;
 
 import javax.xml.stream.XMLInputFactory;
@@ -66,6 +67,7 @@ public class PomWriter {
                 } else if (VersionUtils.isProperty(locatedDependency.get().getVersion())) {
                     String versionPropertyName = VersionUtils.extractPropertyName(
                             locatedDependency.get().getVersion());
+                    versionPropertyName = followProperties(project.getModel().getProperties(), versionPropertyName);
                     PomHelper.setPropertyVersion(eventReader, null, versionPropertyName,
                             dependencyToUpgrade.getVersion());
                 } else {
@@ -128,10 +130,32 @@ public class PomWriter {
         }
     }
 
-    private static void writeFile(File outFile, StringBuilder content)
+    static void writeFile(File outFile, StringBuilder content)
             throws IOException {
         try (Writer writer = WriterFactory.newXmlWriter(outFile)) {
             IOUtil.copy(content.toString(), writer);
+        }
+    }
+
+    /**
+     * If a property references another property (possibly recursively), this method returns the final referenced
+     * property name.
+     *
+     * This doesn't support cases when a property value is a composition of multiple properties, or a composition
+     * of a property and a string.
+     */
+    static String followProperties(Properties properties, String propertyName) {
+        String propertyValue = (String) properties.get(propertyName);
+        if (propertyValue == null) {
+            // couldn't track referenced property, return the last known property name
+            return propertyName;
+        }
+        if (VersionUtils.isProperty(propertyValue)) {
+            // the property value is also a property reference -> follow the chain
+            String newPropertyName = VersionUtils.extractPropertyName(propertyValue);
+            return followProperties(properties, newPropertyName);
+        } else {
+            return propertyName;
         }
     }
 }
