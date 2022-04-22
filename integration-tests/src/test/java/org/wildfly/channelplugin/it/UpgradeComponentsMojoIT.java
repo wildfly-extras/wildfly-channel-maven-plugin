@@ -62,6 +62,13 @@ public class UpgradeComponentsMojoIT {
                 });
         Assertions.assertThat(model.getProperties().get("commons.version")).isEqualTo("${commons2.version}");
         Assertions.assertThat(model.getProperties().get("commons2.version")).isEqualTo("2.10.0.redhat-00001");
+
+        // verify that ignored stream were not upgraded
+        Assertions.assertThat(dependencyModel.getDependency("org.jboss", "ignored-dep", "jar", null))
+                .satisfies(o -> {
+                    Assertions.assertThat(o).isPresent();
+                    Assertions.assertThat(o.get().getVersion()).isEqualTo("1.0.0.Final");
+                });
     }
 
 }

@@ -10,3 +10,6 @@ streams:
   - groupId: org.jboss
     artifactId: extra-dep
     version: 1.0.0.Final
+  - groupId: org.jboss
+    artifactId: ignored-dep
+    version: 2.0.0.Final

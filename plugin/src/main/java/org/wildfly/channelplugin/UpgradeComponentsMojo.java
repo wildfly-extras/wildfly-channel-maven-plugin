@@ -21,7 +21,9 @@ import org.apache.maven.plugins.annotations.Mojo;
 import org.apache.maven.plugins.annotations.Parameter;
 import org.apache.maven.project.MavenProject;
 import org.commonjava.maven.atlas.ident.ref.ArtifactRef;
+import org.commonjava.maven.atlas.ident.ref.ProjectRef;
 import org.commonjava.maven.atlas.ident.ref.SimpleArtifactRef;
+import org.commonjava.maven.atlas.ident.ref.SimpleProjectRef;
 import org.commonjava.maven.ext.common.ManipulationException;
 import org.commonjava.maven.ext.common.model.Project;
 import org.commonjava.maven.ext.core.ManipulationSession;
@@ -85,8 +87,18 @@ public class UpgradeComponentsMojo extends AbstractMojo {
     @Parameter(readonly = true, property = "injectMissingDependencies", defaultValue = "false")
     boolean injectMissingDependencies;
 
+    /**
+     * Disables TLS verification, in case the remote maven repository uses a self-signed or otherwise
+     * invalid certificate.
+     */
     @Parameter(readonly = true, property = "disableTlsVerification", defaultValue = "false")
     boolean disableTlsVerification;
+
+    /**
+     * List of G:As that should not be upgraded in the project.
+     */
+    @Parameter(readonly = true, property = "ignoreGAs", defaultValue = "")
+    List<String> ignoreGAs;
 
     @Parameter(defaultValue = "${project}", readonly = true)
     MavenProject project;
@@ -105,14 +117,21 @@ public class UpgradeComponentsMojo extends AbstractMojo {
 
     Channel channel;
     ChannelSession channelSession;
+    List<ProjectRef> ignoredStreams;
 
     private void init() throws MojoExecutionException {
         if (localRepository == null) {
             localRepository = LOCAL_MAVEN_REPO;
         }
+
         channel = loadChannel();
         channelSession = new ChannelSession(Collections.singletonList(channel),
                 new DefaultMavenVersionsResolverFactory(remoteRepositories, localRepository, disableTlsVerification));
+
+        ignoredStreams = new ArrayList<>();
+        for (String ga: ignoreGAs) {
+            ignoredStreams.add(SimpleProjectRef.parse(ga));
+        }
     }
 
     @Override
@@ -140,6 +159,11 @@ public class UpgradeComponentsMojo extends AbstractMojo {
 
         ArrayList<MavenArtifact> dependenciesToUpgrade = new ArrayList<>();
         for (ArtifactRef artifactRef : projectDependencies.keySet()) {
+
+            if (ignoredStreams.contains(artifactRef.asProjectRef())) {
+                getLog().info("Ignoring stream " + artifactRef.getGroupId() + ":" + artifactRef.getArtifactId());
+                continue;
+            }
 
             if (artifactRef.getVersionStringRaw() == null) {
                 getLog().warn("Null version: " + artifactRef);
@@ -174,8 +198,9 @@ public class UpgradeComponentsMojo extends AbstractMojo {
                             mavenArtifact.getClassifier());
                     ComparableMavenArtifact comparableMavenArtifact = new ComparableMavenArtifact(mavenArtifact);
 
-                    if (!projectDependencies.containsKey(artifactRef) && !dependenciesToUpgrade.contains(
-                            comparableMavenArtifact)) {
+                    if (!projectDependencies.containsKey(artifactRef)
+                            && !dependenciesToUpgrade.contains(comparableMavenArtifact)
+                            && !ignoredStreams.contains(artifactRef.asProjectRef())) {
                         dependenciesToInject.add(mavenArtifact);
                     }
                 } catch (UnresolvedMavenArtifactException e) {

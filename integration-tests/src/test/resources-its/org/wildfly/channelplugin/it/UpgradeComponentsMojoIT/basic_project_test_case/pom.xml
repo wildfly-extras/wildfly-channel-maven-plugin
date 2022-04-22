@@ -31,6 +31,11 @@
                 <artifactId>commons-io</artifactId>
                 <version>${commons.version}</version>
             </dependency>
+            <dependency>
+                <groupId>org.jboss</groupId>
+                <artifactId>ignored-dep</artifactId>
+                <version>1.0.0.Final</version>
+            </dependency>
         </dependencies>
     </dependencyManagement>
 
@@ -56,6 +61,7 @@
                 <configuration>
                     <channelFile>channel.yaml</channelFile>
                     <localRepository>${maven.repo.local}</localRepository>
+                    <ignoreGAs>org.jboss:ignored-dep</ignoreGAs>
                 </configuration>
                 <executions>
                     <execution>
