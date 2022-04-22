@@ -24,7 +24,7 @@ import org.junit.jupiter.api.Test;
 import org.wildfly.channel.MavenArtifact;
 import org.wildfly.channelplugin.utils.DependencyModel;
 
-public class PomWriterTestCase {
+public class PomManipulatorTestCase {
 
     private StringBuilder content;
     private ModifiedPomXMLEventReader eventReader;
@@ -48,7 +48,7 @@ public class PomWriterTestCase {
         Assertions.assertThat(model.getDependency(dep.getGroupId(), dep.getArtifactId(), dep.getExtension(), null))
                 .isEmpty();
 
-        PomWriter.injectManagedDependency(eventReader, dep);
+        PomManipulator.injectManagedDependency(eventReader, dep);
 
         model = readDependencyModel();
         Assertions.assertThat(model.getDependency(dep.getGroupId(), dep.getArtifactId(), dep.getExtension(), null))
@@ -66,10 +66,10 @@ public class PomWriterTestCase {
         properties.put("version.c", "${version.d}");
         properties.put("version.d", "2.0");
 
-        Assertions.assertThat(PomWriter.followProperties(properties, "version.a")).isEqualTo("version.a");
-        Assertions.assertThat(PomWriter.followProperties(properties, "version.b")).isEqualTo("version.d");
-        Assertions.assertThat(PomWriter.followProperties(properties, "version.c")).isEqualTo("version.d");
-        Assertions.assertThat(PomWriter.followProperties(properties, "version.d")).isEqualTo("version.d");
+        Assertions.assertThat(PomManipulator.followProperties(properties, "version.a")).isEqualTo("version.a");
+        Assertions.assertThat(PomManipulator.followProperties(properties, "version.b")).isEqualTo("version.d");
+        Assertions.assertThat(PomManipulator.followProperties(properties, "version.c")).isEqualTo("version.d");
+        Assertions.assertThat(PomManipulator.followProperties(properties, "version.d")).isEqualTo("version.d");
     }
 
     private DependencyModel readDependencyModel() throws IOException, ManipulationException {

@@ -35,7 +35,7 @@ import org.wildfly.channel.MavenArtifact;
 import org.wildfly.channel.Stream;
 import org.wildfly.channel.UnresolvedMavenArtifactException;
 import org.wildfly.channelplugin.channel.ComparableMavenArtifact;
-import org.wildfly.channelplugin.manipulation.PomWriter;
+import org.wildfly.channelplugin.manipulation.PomManipulator;
 import org.wildfly.channelplugin.prospero.DefaultMavenVersionsResolverFactory;
 
 /**
@@ -210,7 +210,10 @@ public class UpgradeComponentsMojo extends AbstractMojo {
             }
         }
 
-        PomWriter.manipulatePom(project, dependenciesToUpgrade, dependenciesToInject);
+        PomManipulator pomWriter = new PomManipulator(project);
+        pomWriter.overrideDependenciesVersions(dependenciesToUpgrade);
+        pomWriter.injectDependencies(dependenciesToInject);
+        pomWriter.write();
     }
 
     private Channel loadChannel() throws MojoExecutionException {

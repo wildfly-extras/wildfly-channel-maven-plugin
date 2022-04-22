@@ -1,6 +1,5 @@
 package org.wildfly.channelplugin.manipulation;
 
-import java.io.File;
 import java.io.IOException;
 import java.io.Writer;
 import java.util.ArrayList;
@@ -12,6 +11,7 @@ import javax.xml.stream.XMLInputFactory;
 import javax.xml.stream.XMLStreamException;
 import javax.xml.stream.events.XMLEvent;
 
+import org.apache.http.util.Asserts;
 import org.apache.maven.model.Dependency;
 import org.codehaus.mojo.versions.api.PomHelper;
 import org.codehaus.mojo.versions.rewriting.ModifiedPomXMLEventReader;
@@ -21,8 +21,8 @@ import org.codehaus.stax2.XMLInputFactory2;
 import org.commonjava.maven.ext.common.model.Project;
 import org.wildfly.channel.MavenArtifact;
 import org.wildfly.channelplugin.ChannelPluginLogger;
-import org.wildfly.channelplugin.utils.VersionUtils;
 import org.wildfly.channelplugin.utils.DependencyModel;
+import org.wildfly.channelplugin.utils.VersionUtils;
 
 /**
  * Provides functionality to override dependencies versions in POM files.
@@ -39,22 +39,33 @@ import org.wildfly.channelplugin.utils.DependencyModel;
  * <p>
  * TODO: Modification of properties in profiles is currently not supported.
  */
-public class PomWriter {
+public class PomManipulator {
 
     private static final String DEPENDENCY_MANAGEMENT_PATH = "/project/dependencyManagement/dependencies";
     private static final String DEPENDENCIES = "dependencies";
 
-    public static void manipulatePom(Project project, ArrayList<MavenArtifact> dependenciesToUpgrade,
-            ArrayList<MavenArtifact> dependenciesToInject) {
+    private final Project project;
+    private final ModifiedPomXMLEventReader eventReader;
+    private final DependencyModel dependencyModel;
+    private final StringBuilder content;
+    private boolean closed = false;
+
+    public PomManipulator(Project project) {
         try {
+            this.project = project;
             XMLInputFactory inputFactory = XMLInputFactory2.newInstance();
             inputFactory.setProperty(XMLInputFactory2.P_PRESERVE_LOCATION, Boolean.TRUE);
-            StringBuilder content = PomHelper.readXmlFile(project.getPom());
-            ModifiedPomXMLEventReader eventReader = new ModifiedPomXMLEventReader(content, inputFactory,
-                    project.getPom().getPath());
+            this.content = PomHelper.readXmlFile(project.getPom());
+            this.eventReader = new ModifiedPomXMLEventReader(content, inputFactory, project.getPom().getPath());
+            this.dependencyModel = new DependencyModel(project.getModel());
+        } catch (IOException | XMLStreamException e) {
+            throw new RuntimeException("Couldn't initialize PomWriter instance", e);
+        }
+    }
 
-            DependencyModel dependencyModel = new DependencyModel(project.getModel());
-
+    public void overrideDependenciesVersions(ArrayList<MavenArtifact> dependenciesToUpgrade) {
+        assertOpen();
+        try {
             for (MavenArtifact dependencyToUpgrade : dependenciesToUpgrade) {
                 Optional<Dependency> locatedDependency = dependencyModel.getDependency(
                         dependencyToUpgrade.getGroupId(),
@@ -76,22 +87,42 @@ public class PomWriter {
                             dependencyToUpgrade.getVersion(), project.getModel());
                 }
             }
+        } catch (XMLStreamException e) {
+            throw new RuntimeException("Failed to override dependencies versions", e);
+        }
+    }
 
-            for (MavenArtifact dep: dependenciesToInject) {
+    public void injectDependencies(ArrayList<MavenArtifact> dependenciesToInject) {
+        assertOpen();
+        try {
+            for (MavenArtifact dep : dependenciesToInject) {
                 injectManagedDependency(eventReader, dep);
             }
-
-            writeFile(project.getPom(), content);
         } catch (XMLStreamException e) {
-            e.printStackTrace();
-        } catch (IOException e) {
-            e.printStackTrace();
+            throw new RuntimeException("Failed to inject dependencies", e);
         }
+    }
+
+    public void write() {
+        assertOpen();
+        try (Writer writer = WriterFactory.newXmlWriter(project.getPom())) {
+            closed = true;
+            IOUtil.copy(content.toString(), writer);
+            eventReader.close();
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to write to the pom file", e);
+        } catch (XMLStreamException e) {
+            throw new RuntimeException("Couldn't close event reader", e);
+        }
+    }
+
+    private void assertOpen() {
+        Asserts.check(!closed, "This instance cannot be used repeatedly.");
     }
 
     /**
      * This method attempts to inject new depenendency into at the end of the dependencyManagement section.
-     *
+     * <p>
      * TODO: The dependencyManagement section must be already present in the POM, it's not created if it's missing.
      */
     static void injectManagedDependency(ModifiedPomXMLEventReader eventReader, MavenArtifact dep)
@@ -130,17 +161,10 @@ public class PomWriter {
         }
     }
 
-    static void writeFile(File outFile, StringBuilder content)
-            throws IOException {
-        try (Writer writer = WriterFactory.newXmlWriter(outFile)) {
-            IOUtil.copy(content.toString(), writer);
-        }
-    }
-
     /**
      * If a property references another property (possibly recursively), this method returns the final referenced
      * property name.
-     *
+     * <p>
      * This doesn't support cases when a property value is a composition of multiple properties, or a composition
      * of a property and a string.
      */
