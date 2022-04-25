@@ -1,7 +1,9 @@
 package org.wildfly.channelplugin;
 
 import java.io.File;
+import java.io.IOException;
 import java.net.MalformedURLException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -210,10 +212,16 @@ public class UpgradeComponentsMojo extends AbstractMojo {
             }
         }
 
+        try {
+            String recordedChannelYaml = ChannelMapper.toYaml(channelSession.getRecordedChannel());
+            Files.write(Path.of(project.getPom().getParent(), "recorded-channel.yaml"), recordedChannelYaml.getBytes());
+        } catch (IOException e) {
+            throw new RuntimeException("Couldn't write recorder channel", e);
+        }
         PomManipulator pomWriter = new PomManipulator(project);
         pomWriter.overrideDependenciesVersions(dependenciesToUpgrade);
         pomWriter.injectDependencies(dependenciesToInject);
-        pomWriter.write();
+        pomWriter.writePom();
     }
 
     private Channel loadChannel() throws MojoExecutionException {

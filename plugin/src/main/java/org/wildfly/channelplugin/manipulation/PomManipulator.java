@@ -50,6 +50,12 @@ public class PomManipulator {
     private final StringBuilder content;
     private boolean closed = false;
 
+    /**
+     * @param project Project instance
+     * @param executionRootDirectory the execution directory path (the top level module)
+     * @param produceEffectiveChannel upon writing the pom, should the manipulator also produce and effective channel
+     *                               file?
+     */
     public PomManipulator(Project project) {
         try {
             this.project = project;
@@ -103,7 +109,10 @@ public class PomManipulator {
         }
     }
 
-    public void write() {
+    /**
+     * Writes the updated POM file.
+     */
+    public void writePom() {
         assertOpen();
         try (Writer writer = WriterFactory.newXmlWriter(project.getPom())) {
             closed = true;

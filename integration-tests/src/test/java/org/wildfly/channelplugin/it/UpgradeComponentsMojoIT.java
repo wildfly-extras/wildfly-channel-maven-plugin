@@ -1,5 +1,9 @@
 package org.wildfly.channelplugin.it;
 
+import java.io.File;
+import java.net.MalformedURLException;
+import java.util.stream.Collectors;
+
 import com.soebes.itf.jupiter.extension.MavenJupiterExtension;
 import com.soebes.itf.jupiter.extension.MavenPredefinedRepository;
 import com.soebes.itf.jupiter.extension.MavenTest;
@@ -7,6 +11,8 @@ import com.soebes.itf.jupiter.extension.SystemProperty;
 import com.soebes.itf.jupiter.maven.MavenExecutionResult;
 import org.apache.maven.model.Model;
 import org.assertj.core.api.Assertions;
+import org.wildfly.channel.Channel;
+import org.wildfly.channel.ChannelMapper;
 import org.wildfly.channel.version.VersionMatcher;
 import org.wildfly.channelplugin.utils.DependencyModel;
 
@@ -19,7 +25,7 @@ public class UpgradeComponentsMojoIT {
 
     @SystemProperty(value = "injectMissingDependencies", content = "true")
     @MavenTest
-    void basic_project_test_case(MavenExecutionResult result) {
+    void basic_project_test_case(MavenExecutionResult result) throws MalformedURLException {
         assertThat(result).isSuccessful();
 
         Model model = result.getMavenProjectResult().getModel();
@@ -27,7 +33,7 @@ public class UpgradeComponentsMojoIT {
 
         // verify version property has been overriden
         Assertions.assertThat(model.getProperties().getProperty("undertow.version"))
-                .usingComparator(VersionMatcher.COMPARATOR).isGreaterThan("2.2.5.Final-redhat-00001");
+                .usingComparator(VersionMatcher.COMPARATOR).isEqualTo("2.2.17.SP1-redhat-00001");
 
         // verify dependency versions are still set to properties
         Assertions.assertThat(dependencyModel.getDependency("io.undertow", "undertow-core", "jar", null))
@@ -45,7 +51,7 @@ public class UpgradeComponentsMojoIT {
         Assertions.assertThat(dependencyModel.getDependency("org.jboss.marshalling", "jboss-marshalling", "jar", null))
                 .satisfies(o -> {
                     Assertions.assertThat(o.isPresent());
-                    Assertions.assertThat(o.get().getVersion()).isGreaterThan("2.0.6.Final-redhat-00001");
+                    Assertions.assertThat(o.get().getVersion()).isEqualTo("2.0.9.Final-redhat-00001");
                 });
 
         // verify dependency has been injected
@@ -61,7 +67,7 @@ public class UpgradeComponentsMojoIT {
                     Assertions.assertThat(o.get().getVersion()).isEqualTo("${commons.version}");
                 });
         Assertions.assertThat(model.getProperties().get("commons.version")).isEqualTo("${commons2.version}");
-        Assertions.assertThat(model.getProperties().get("commons2.version")).isEqualTo("2.10.0.redhat-00001");
+        Assertions.assertThat(model.getProperties().get("commons2.version")).isEqualTo("2.10.1.redhat-00001");
 
         // verify that ignored stream were not upgraded
         Assertions.assertThat(dependencyModel.getDependency("org.jboss", "ignored-dep", "jar", null))
@@ -69,6 +75,22 @@ public class UpgradeComponentsMojoIT {
                     Assertions.assertThat(o).isPresent();
                     Assertions.assertThat(o.get().getVersion()).isEqualTo("1.0.0.Final");
                 });
+
+        // verify that effective channel file has been created
+        File effectiveChannelFile = new File(result.getMavenProjectResult().getTargetProjectDirectory(),
+                "recorded-channel.yaml");
+        Assertions.assertThat(effectiveChannelFile).exists();
+        Channel effectiveChannel = ChannelMapper.from(effectiveChannelFile.toURI().toURL());
+        Assertions.assertThat(effectiveChannel.getStreams().stream()
+                        .map(s -> s.getGroupId() + ":" + s.getArtifactId() + ":" + s.getVersion())
+                        .collect(Collectors.toList()))
+                .contains(
+                        "io.undertow:undertow-core:2.2.17.SP1-redhat-00001",
+                        "org.jboss.marshalling:jboss-marshalling:2.0.9.Final-redhat-00001",
+                        "org.jboss:extra-dep:1.0.0.Final",
+                        "commons-io:commons-io:2.10.1.redhat-00001",
+                        "org.jboss:ignored-dep:2.0.0.Final"
+                );
     }
 
 }
