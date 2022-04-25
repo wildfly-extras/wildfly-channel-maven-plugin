@@ -23,7 +23,7 @@
         <maven.version>3.6.3</maven.version> <!-- Note that PME depends on 3.5.0 -->
         <maven-resolver.version>1.6.2</maven-resolver.version>
         <pme.version>4.7</pme.version>
-        <channel.version>1.0.0.Alpha10</channel.version>
+        <channel.version>1.0.0.Alpha12</channel.version>
     </properties>
 
     <dependencies>

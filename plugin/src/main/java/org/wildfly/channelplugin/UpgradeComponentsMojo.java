@@ -172,7 +172,7 @@ public class UpgradeComponentsMojo extends AbstractMojo {
             }
 
             try {
-                MavenArtifact mavenArtifact = channelSession.resolveLatestMavenArtifact(artifactRef.getGroupId(),
+                MavenArtifact mavenArtifact = channelSession.resolveMavenArtifact(artifactRef.getGroupId(),
                         artifactRef.getArtifactId(), artifactRef.getType(), artifactRef.getClassifier());
 
                 if (!mavenArtifact.getVersion().equals(artifactRef.getVersionString())) {
@@ -193,7 +193,7 @@ public class UpgradeComponentsMojo extends AbstractMojo {
         if (injectMissingDependencies) {
             for (Stream stream : channel.getStreams()) {
                 try {
-                    MavenArtifact mavenArtifact = channelSession.resolveLatestMavenArtifact(stream.getGroupId(),
+                    MavenArtifact mavenArtifact = channelSession.resolveMavenArtifact(stream.getGroupId(),
                             stream.getArtifactId(), "jar", null);
                     SimpleArtifactRef artifactRef = new SimpleArtifactRef(mavenArtifact.getGroupId(),
                             mavenArtifact.getArtifactId(), mavenArtifact.getVersion(), mavenArtifact.getExtension(),

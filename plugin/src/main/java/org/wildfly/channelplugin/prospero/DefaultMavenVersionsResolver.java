@@ -137,13 +137,6 @@ public class DefaultMavenVersionsResolver implements MavenVersionsResolver {
     }
 
     @Override
-    public File resolveLatestVersionFromMavenMetadata(String groupId, String artifactId, String extension,
-            String classifier) {
-        // artifact file is not needed
-        return null;
-    }
-
-    @Override
     public File resolveArtifact(String groupId, String artifactId, String extension, String classifier,
             String version) {
         // artifact file is not needed, but returning null is not allowed ATM
