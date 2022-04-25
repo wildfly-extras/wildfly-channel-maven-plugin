@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-package org.wildfly.channelplugin.prospero;
+package org.wildfly.channelplugin.resolution;
 
 import java.util.List;
 
