@@ -102,6 +102,12 @@ public class UpgradeComponentsMojo extends AbstractMojo {
     @Parameter(readonly = true, property = "ignoreGAs", defaultValue = "")
     List<String> ignoreGAs;
 
+    /**
+     * If true, the recorded channel file will be written to `target/recorded-channel.yaml`.
+     */
+    @Parameter(readonly = true, property = "writeRecordedChannel", defaultValue = "true")
+    boolean writeRecordedChannel;
+
     @Parameter(defaultValue = "${project}", readonly = true)
     MavenProject project;
 
@@ -212,16 +218,14 @@ public class UpgradeComponentsMojo extends AbstractMojo {
             }
         }
 
-        try {
-            String recordedChannelYaml = ChannelMapper.toYaml(channelSession.getRecordedChannel());
-            Files.write(Path.of(project.getPom().getParent(), "recorded-channel.yaml"), recordedChannelYaml.getBytes());
-        } catch (IOException e) {
-            throw new RuntimeException("Couldn't write recorder channel", e);
-        }
         PomManipulator pomWriter = new PomManipulator(project);
         pomWriter.overrideDependenciesVersions(dependenciesToUpgrade);
         pomWriter.injectDependencies(dependenciesToInject);
         pomWriter.writePom();
+
+        if (writeRecordedChannel) {
+            writeRecordedChannel(project);
+        }
     }
 
     private Channel loadChannel() throws MojoExecutionException {
@@ -262,4 +266,19 @@ public class UpgradeComponentsMojo extends AbstractMojo {
         return roots.get(0);
     }
 
+    private void writeRecordedChannel(Project project) {
+        try {
+            Channel recordedChannel = channelSession.getRecordedChannel();
+            if (recordedChannel.getStreams().size() > 0) {
+                String recordedChannelYaml = ChannelMapper.toYaml(recordedChannel);
+                Path targetDir = Path.of(project.getPom().getParent(), "target");
+                if (!targetDir.toFile().exists()) {
+                    targetDir.toFile().mkdir();
+                }
+                Files.write(Path.of(targetDir.toString(), "recorded-channel.yaml"), recordedChannelYaml.getBytes());
+            }
+        } catch (IOException e) {
+            throw new RuntimeException("Couldn't write recorder channel", e);
+        }
+    }
 }

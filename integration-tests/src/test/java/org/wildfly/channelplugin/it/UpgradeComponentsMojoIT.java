@@ -78,7 +78,7 @@ public class UpgradeComponentsMojoIT {
 
         // verify that effective channel file has been created
         File effectiveChannelFile = new File(result.getMavenProjectResult().getTargetProjectDirectory(),
-                "recorded-channel.yaml");
+                "target/recorded-channel.yaml");
         Assertions.assertThat(effectiveChannelFile).exists();
         Channel effectiveChannel = ChannelMapper.from(effectiveChannelFile.toURI().toURL());
         Assertions.assertThat(effectiveChannel.getStreams().stream()
