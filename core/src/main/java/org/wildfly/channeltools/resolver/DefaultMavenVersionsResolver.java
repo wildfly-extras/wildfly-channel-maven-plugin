@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-package org.wildfly.channelplugin.resolution;
+package org.wildfly.channeltools.resolver;
 
 import java.io.File;
 import java.security.GeneralSecurityException;
@@ -51,8 +51,7 @@ import org.eclipse.aether.transport.file.FileTransporterFactory;
 import org.eclipse.aether.transport.http.HttpTransporterFactory;
 import org.eclipse.aether.util.repository.AuthenticationBuilder;
 import org.eclipse.aether.version.Version;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import org.jboss.logging.Logger;
 import org.wildfly.channel.spi.MavenVersionsResolver;
 
 import static java.util.Collections.emptySet;
@@ -60,7 +59,7 @@ import static java.util.Objects.requireNonNull;
 
 public class DefaultMavenVersionsResolver implements MavenVersionsResolver {
 
-    public static final Logger logger = LoggerFactory.getLogger(DefaultMavenVersionsResolver.class);
+    public static final Logger logger = Logger.getLogger(DefaultMavenVersionsResolver.class);
 
     private static final File NULL_FILE = new File("/dev/null");
 
@@ -75,7 +74,7 @@ public class DefaultMavenVersionsResolver implements MavenVersionsResolver {
         this.localRepositoryPath = localRepositoryPath;
         this.remoteRepositories = new ArrayList<>(remoteRepositoryUrls.size());
         for (int i = 0; i < remoteRepositoryUrls.size(); i++) {
-            logger.info("Adding remote repository {}", remoteRepositoryUrls.get(i));
+            logger.debugf("Adding remote repository %s", remoteRepositoryUrls.get(i));
 
             // hack to disable TLS verification
             SSLContext sslcontext;
@@ -113,8 +112,7 @@ public class DefaultMavenVersionsResolver implements MavenVersionsResolver {
     public Set<String> getAllVersions(String groupId, String artifactId, String extension, String classifier) {
         requireNonNull(groupId);
         requireNonNull(artifactId);
-        logger.trace("Resolving the latest version of {}:{} in repositories: {}",
-                groupId, artifactId,
+        logger.debugf("Resolving the latest version of %s:%s in repositories: %s", groupId, artifactId,
                 remoteRepositories.stream().map(RemoteRepository::getUrl).collect(Collectors.joining(",")));
 
         Artifact artifact = new DefaultArtifact(groupId, artifactId, classifier, extension, "[0,)");
@@ -129,7 +127,7 @@ public class DefaultMavenVersionsResolver implements MavenVersionsResolver {
                     .map(Version::toString)
                     .collect(Collectors.toSet());
             reportExceptions(versionRangeResult);
-            logger.trace("All versions in the repositories: {}", versions);
+            logger.debugf("All versions in the repositories: %s", versions);
             return versions;
         } catch (VersionRangeResolutionException e) {
             return emptySet();
@@ -153,10 +151,10 @@ public class DefaultMavenVersionsResolver implements MavenVersionsResolver {
                     .collect(Collectors.toList());
             if (exceptions.size() > 0) {
                 Artifact artifact = versionRangeResult.getRequest().getArtifact();
-                logger.warn("Error when resolving {}:{} versions, printing exceptions bellow:",
+                logger.warnf("Error when resolving %s:%s versions, printing exceptions bellow:",
                         artifact.getGroupId(), artifact.getArtifactId());
                 for (Exception e : exceptions) {
-                    logger.warn("", e);
+                    logger.warn(e);
                 }
             }
         }

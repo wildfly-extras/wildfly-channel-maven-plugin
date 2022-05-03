@@ -38,7 +38,7 @@ import org.wildfly.channel.Stream;
 import org.wildfly.channel.UnresolvedMavenArtifactException;
 import org.wildfly.channelplugin.channel.ComparableMavenArtifact;
 import org.wildfly.channelplugin.manipulation.PomManipulator;
-import org.wildfly.channelplugin.resolution.DefaultMavenVersionsResolverFactory;
+import org.wildfly.channeltools.resolver.DefaultMavenVersionsResolverFactory;
 
 /**
  * This tasks overrides dependencies versions according to provided channel file.

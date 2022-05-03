@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-package org.wildfly.channelplugin.resolution;
+package org.wildfly.channeltools.resolver;
 
 import java.util.List;
 

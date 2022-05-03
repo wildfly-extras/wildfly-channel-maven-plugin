@@ -79,7 +79,7 @@ public class PomManipulator {
                         dependencyToUpgrade.getExtension(),
                         dependencyToUpgrade.getClassifier());
                 if (locatedDependency.isEmpty()) {
-                    ChannelPluginLogger.LOGGER.severe("Couldn't locate dependency " + dependencyToUpgrade);
+                    ChannelPluginLogger.LOGGER.errorf("Couldn't locate dependency %s", dependencyToUpgrade);
                     continue;
                 } else if (VersionUtils.isProperty(locatedDependency.get().getVersion())) {
                     String versionPropertyName = VersionUtils.extractPropertyName(

@@ -1,6 +1,6 @@
 package org.wildfly.channelplugin;
 
-import java.util.logging.Logger;
+import org.jboss.logging.Logger;
 
 public final class ChannelPluginLogger {
 
