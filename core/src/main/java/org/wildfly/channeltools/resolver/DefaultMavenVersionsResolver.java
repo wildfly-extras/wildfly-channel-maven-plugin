@@ -22,6 +22,7 @@ import java.security.GeneralSecurityException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -62,6 +63,7 @@ public class DefaultMavenVersionsResolver implements MavenVersionsResolver {
     public static final Logger logger = Logger.getLogger(DefaultMavenVersionsResolver.class);
 
     private static final File NULL_FILE = new File("/dev/null");
+    private static final String LOCAL_MAVEN_REPO = System.getProperty("user.home") + "/.m2/repository";
 
     private final RepositorySystem system;
     private final DefaultRepositorySystemSession session;
@@ -71,7 +73,7 @@ public class DefaultMavenVersionsResolver implements MavenVersionsResolver {
 
     DefaultMavenVersionsResolver(List<String> remoteRepositoryUrls, String localRepositoryPath, boolean disableTlsVerification) {
         this.disableTlsVerification = disableTlsVerification;
-        this.localRepositoryPath = localRepositoryPath;
+        this.localRepositoryPath = Objects.requireNonNullElse(localRepositoryPath, LOCAL_MAVEN_REPO);
         this.remoteRepositories = new ArrayList<>(remoteRepositoryUrls.size());
         for (int i = 0; i < remoteRepositoryUrls.size(); i++) {
             logger.debugf("Adding remote repository %s", remoteRepositoryUrls.get(i));
