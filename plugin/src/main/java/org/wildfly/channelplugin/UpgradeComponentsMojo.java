@@ -24,12 +24,19 @@ import org.apache.maven.plugins.annotations.Parameter;
 import org.apache.maven.project.MavenProject;
 import org.commonjava.maven.atlas.ident.ref.ArtifactRef;
 import org.commonjava.maven.atlas.ident.ref.ProjectRef;
+import org.commonjava.maven.atlas.ident.ref.ProjectVersionRef;
 import org.commonjava.maven.atlas.ident.ref.SimpleArtifactRef;
 import org.commonjava.maven.atlas.ident.ref.SimpleProjectRef;
+import org.commonjava.maven.atlas.ident.ref.SimpleProjectVersionRef;
 import org.commonjava.maven.ext.common.ManipulationException;
 import org.commonjava.maven.ext.common.model.Project;
 import org.commonjava.maven.ext.core.ManipulationSession;
 import org.commonjava.maven.ext.io.PomIO;
+import org.eclipse.aether.RepositorySystem;
+import org.eclipse.aether.artifact.DefaultArtifact;
+import org.eclipse.aether.resolution.ArtifactRequest;
+import org.eclipse.aether.resolution.ArtifactResolutionException;
+import org.eclipse.aether.resolution.ArtifactResult;
 import org.wildfly.channel.Channel;
 import org.wildfly.channel.ChannelMapper;
 import org.wildfly.channel.ChannelSession;
@@ -42,7 +49,7 @@ import org.wildfly.channeltools.resolver.DefaultMavenVersionsResolverFactory;
 
 /**
  * This tasks overrides dependencies versions according to provided channel file.
- *
+ * <p>
  * One of following properties needs to be set:
  * <li>`channelFile` to use a channel file located on a local file system,</li>
  * <li>`channelGAV` to lookup an artifact containing the channel file.</li>
@@ -51,6 +58,8 @@ import org.wildfly.channeltools.resolver.DefaultMavenVersionsResolverFactory;
 public class UpgradeComponentsMojo extends AbstractMojo {
 
     private static final String LOCAL_MAVEN_REPO = System.getProperty("user.home") + "/.m2/repository";
+    private static final String CHANNEL_CLASSIFIER = "channel";
+    private static final String CHANNEL_EXTENSION = "yaml";
 
     /**
      * Path to the channel definition file on a local filesystem.
@@ -83,7 +92,7 @@ public class UpgradeComponentsMojo extends AbstractMojo {
     /**
      * Inject dependencies from channel definition that are missing in the project (supposedly transitive dependencies)
      * into dependency management section?
-     *
+     * <p>
      * Experimental
      */
     @Parameter(readonly = true, property = "injectMissingDependencies", defaultValue = "false")
@@ -108,20 +117,23 @@ public class UpgradeComponentsMojo extends AbstractMojo {
     @Parameter(readonly = true, property = "writeRecordedChannel", defaultValue = "true")
     boolean writeRecordedChannel;
 
-    @Parameter(defaultValue = "${project}", readonly = true)
-    MavenProject project;
-
-    @Parameter(defaultValue = "${session}", readonly = true)
-    MavenSession mavenSession;
-
     @Parameter(defaultValue = "${basedir}", readonly = true)
     File basedir;
+
+    @Inject
+    MavenProject project;
+
+    @Inject
+    MavenSession mavenSession;
 
     @Inject
     PomIO pomIO;
 
     @Inject
     ManipulationSession manipulationSession;
+
+    @Inject
+    RepositorySystem repositorySystem;
 
     Channel channel;
     ChannelSession channelSession;
@@ -137,7 +149,7 @@ public class UpgradeComponentsMojo extends AbstractMojo {
                 new DefaultMavenVersionsResolverFactory(remoteRepositories, localRepository, disableTlsVerification));
 
         ignoredStreams = new ArrayList<>();
-        for (String ga: ignoreGAs) {
+        for (String ga : ignoreGAs) {
             ignoredStreams.add(SimpleProjectRef.parse(ga));
         }
     }
@@ -229,28 +241,50 @@ public class UpgradeComponentsMojo extends AbstractMojo {
     }
 
     private Channel loadChannel() throws MojoExecutionException {
-        if (channelFile != null) {
-            try {
+        try {
+            if (channelFile != null) {
                 Path channelFilePath = Path.of(channelFile);
                 if (!channelFilePath.isAbsolute()) {
                     channelFilePath = Path.of(mavenSession.getExecutionRootDirectory()).resolve(channelFilePath);
                 }
                 getLog().info("Reading channel file " + channelFilePath);
                 return ChannelMapper.from(channelFilePath.toUri().toURL());
-            } catch (MalformedURLException e) {
-                throw new MojoExecutionException("Could not read channelFile", e);
+            } else if (StringUtils.isNotBlank(channelGAV)) {
+                // download the maven artifact with the channel
+                return resolveChannel(channelGAV);
+            } else {
+                throw new MojoExecutionException("Either channelFile or channelGAV parameter needs to be set.");
             }
-        } else if (StringUtils.isNotBlank(channelGAV)) {
-            // download the maven artifact with the channel
-            throw new MojoExecutionException("Not implemented yet, the channelFile parameter must be set.");
-        } else {
-            throw new MojoExecutionException("Either channelFile or channelGAV parameter needs to be set.");
+        } catch (MalformedURLException e) {
+            throw new MojoExecutionException("Could not read channelFile", e);
+        } catch (ArtifactResolutionException e) {
+            throw new MojoExecutionException("Failed to resolve the channel artifact", e);
         }
     }
 
     /**
-     * This returns a PME representation of currently processed Maven module.
+     * Resolves channel file specified by a GAV.
      *
+     * This searches in all remote repositories specified in the processed project and the settings.xml.
+     */
+    private Channel resolveChannel(String gavString) throws ArtifactResolutionException, MalformedURLException {
+        ProjectVersionRef gav = SimpleProjectVersionRef.parse(gavString);
+        DefaultArtifact artifact = new DefaultArtifact(gav.getGroupId(), gav.getArtifactId(), CHANNEL_CLASSIFIER,
+                CHANNEL_EXTENSION, gav.getVersionString());
+
+        ArtifactRequest request = new ArtifactRequest();
+        request.setArtifact(artifact);
+        request.setRepositories(project.getRemoteProjectRepositories());
+        ArtifactResult artifactResult = repositorySystem.resolveArtifact(mavenSession.getRepositorySession(), request);
+        getLog().info(String.format("Channel file resolved from %s in repository %s",
+                artifact, artifactResult.getRepository().getId()));
+        File channelFile = artifactResult.getArtifact().getFile();
+        return ChannelMapper.from(channelFile.toURI().toURL());
+    }
+
+    /**
+     * This returns a PME representation of currently processed Maven module.
+     * <p>
      * PME (POM Manipulation Extension) is subproject of the PNC (Project Newcastle) productization system. PME does
      * a very similar job to what this Maven module does.
      */
