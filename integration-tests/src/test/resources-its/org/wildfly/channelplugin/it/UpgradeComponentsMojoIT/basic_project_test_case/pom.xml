@@ -52,28 +52,4 @@
         </dependency>
     </dependencies>
 
-    <build>
-        <plugins>
-            <plugin>
-                <groupId>org.wildfly</groupId>
-                <artifactId>wildfly-channel-maven-plugin</artifactId>
-                <version>@project.version@</version>
-                <configuration>
-                    <channelFile>channel.yaml</channelFile>
-                    <localRepository>${maven.repo.local}</localRepository>
-                    <ignoreGAs>org.jboss:ignored-dep</ignoreGAs>
-                </configuration>
-                <executions>
-                    <execution>
-                        <id>the_first_test_case</id>
-                        <phase>initialize</phase>
-                        <goals>
-                            <goal>upgrade</goal>
-                        </goals>
-                    </execution>
-                </executions>
-            </plugin>
-        </plugins>
-    </build>
-
 </project>

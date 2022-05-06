@@ -2,19 +2,25 @@ package org.wildfly.channelplugin.it;
 
 import java.io.File;
 import java.net.MalformedURLException;
+import java.util.Optional;
+import java.util.logging.Logger;
 import java.util.stream.Collectors;
 
+import com.soebes.itf.jupiter.extension.MavenGoal;
 import com.soebes.itf.jupiter.extension.MavenJupiterExtension;
 import com.soebes.itf.jupiter.extension.MavenPredefinedRepository;
 import com.soebes.itf.jupiter.extension.MavenTest;
 import com.soebes.itf.jupiter.extension.SystemProperty;
 import com.soebes.itf.jupiter.maven.MavenExecutionResult;
+import org.apache.maven.model.Dependency;
 import org.apache.maven.model.Model;
 import org.assertj.core.api.Assertions;
 import org.wildfly.channel.Channel;
 import org.wildfly.channel.ChannelMapper;
+import org.wildfly.channel.Stream;
 import org.wildfly.channel.version.VersionMatcher;
 import org.wildfly.channelplugin.utils.DependencyModel;
+import org.wildfly.channelplugin.utils.VersionUtils;
 
 import static com.soebes.itf.extension.assertj.MavenExecutionResultAssert.assertThat;
 
@@ -23,7 +29,16 @@ import static com.soebes.itf.extension.assertj.MavenExecutionResultAssert.assert
 @MavenPredefinedRepository("maven-repo")
 public class UpgradeComponentsMojoIT {
 
+    private static final Logger LOGGER = Logger.getLogger(UpgradeComponentsMojoIT.class.getName());
+
+    /**
+     * Basic functionality check.
+     */
+    @MavenGoal("${project.groupId}:wildfly-channel-maven-plugin:${project.version}:upgrade")
+    @SystemProperty(value = "channelFile", content = "channel.yaml")
     @SystemProperty(value = "injectMissingDependencies", content = "true")
+    @SystemProperty(value = "localRepository", content = "${maven.repo.local}")
+    @SystemProperty(value = "ignoreGAs", content = "org.jboss:ignored-dep")
     @MavenTest
     void basic_project_test_case(MavenExecutionResult result) throws MalformedURLException {
         assertThat(result).isSuccessful();
@@ -91,6 +106,46 @@ public class UpgradeComponentsMojoIT {
                         "commons-io:commons-io:2.10.1.redhat-00001",
                         "org.jboss:ignored-dep:2.0.0.Final"
                 );
+    }
+
+    /**
+     * This test tales a jboss-eap-jakartaee8:7.4.0.GA BOM and aligns it to a channel with more recent component
+     * versions. It is verified that all BOM dependencies that are listed in the channel, are upgraded accordingly.
+     */
+    @MavenGoal("${project.groupId}:wildfly-channel-maven-plugin:${project.version}:upgrade")
+    @SystemProperty(value = "channelFile", content = "channel.yaml")
+    @MavenTest
+    void eap_bom_test_case(MavenExecutionResult result) throws MalformedURLException {
+        assertThat(result).isSuccessful();
+
+        File channelFile = new File(result.getMavenProjectResult().getTargetProjectDirectory(), "channel.yaml");
+        Channel channel = ChannelMapper.from(channelFile.toURI().toURL());
+        Model model = result.getMavenProjectResult().getModel();
+
+        for (Dependency dependency : model.getDependencyManagement().getDependencies()) {
+            Optional<Stream> streamOptional = channel.findStreamFor(dependency.getGroupId(),
+                    dependency.getArtifactId());
+
+            if (streamOptional.isPresent()) {
+                Assertions.assertThat(streamOptional).isPresent();
+                Assertions.assertThat(streamOptional.get().getVersion()).isNotNull();
+
+                String propertyExpression = dependency.getVersion();
+                Assertions.assertThat(propertyExpression).satisfies(e -> {
+                    Assertions.assertThat(e).startsWith("${");
+                    Assertions.assertThat(e).endsWith("}");
+                });
+                String propertyName = VersionUtils.extractPropertyName(propertyExpression);
+                String versionString = model.getProperties().getProperty(propertyName);
+                Assertions.assertThat(versionString).isNotNull();
+                Assertions.assertThat(versionString)
+                        .as("dependency version for %s:%s", dependency.getGroupId(), dependency.getArtifactId())
+                        .isEqualTo(streamOptional.get().getVersion());
+            } else {
+                LOGGER.warning("Can't find stream for " + dependency);
+            }
+        }
+
     }
 
 }
