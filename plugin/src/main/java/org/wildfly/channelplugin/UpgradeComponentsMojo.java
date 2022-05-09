@@ -163,6 +163,11 @@ public class UpgradeComponentsMojo extends AbstractMojo {
 
     @Override
     public void execute() throws MojoExecutionException {
+        // Do not perform any work in submodules, unless the `processRootOnly` parameter is set to false.
+        if (processRootOnly && !mavenSession.getCurrentProject().isExecutionRoot()) {
+            return;
+        }
+
         init();
 
         try {
