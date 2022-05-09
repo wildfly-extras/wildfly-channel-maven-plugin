@@ -66,7 +66,7 @@ public class UpgradeComponentsMojo extends AbstractMojo {
      * <p>
      * Alternative for the `channelGAV` parameter.
      */
-    @Parameter(readonly = true, required = false, property = "channelFile")
+    @Parameter(required = false, property = "channelFile")
     String channelFile;
 
     /**
@@ -74,19 +74,19 @@ public class UpgradeComponentsMojo extends AbstractMojo {
      * <p>
      * Alternative for the `channelFile` parameter.
      */
-    @Parameter(readonly = true, required = false, property = "channelGAV")
+    @Parameter(required = false, property = "channelGAV")
     String channelGAV;
 
     /**
      * Comma separated list of remote repositories URLs, that should be used to resolve artifacts.
      */
-    @Parameter(readonly = true, required = false, property = "remoteRepositories")
+    @Parameter(required = false, property = "remoteRepositories")
     List<String> remoteRepositories;
 
     /**
      * Local repository path.
      */
-    @Parameter(readonly = true, property = "localRepository")
+    @Parameter(property = "localRepository")
     String localRepository;
 
     /**
@@ -95,27 +95,34 @@ public class UpgradeComponentsMojo extends AbstractMojo {
      * <p>
      * Experimental
      */
-    @Parameter(readonly = true, property = "injectMissingDependencies", defaultValue = "false")
+    @Parameter(property = "injectMissingDependencies", defaultValue = "false")
     boolean injectMissingDependencies;
 
     /**
      * Disables TLS verification, in case the remote maven repository uses a self-signed or otherwise
      * invalid certificate.
      */
-    @Parameter(readonly = true, property = "disableTlsVerification", defaultValue = "false")
+    @Parameter(property = "disableTlsVerification", defaultValue = "false")
     boolean disableTlsVerification;
 
     /**
      * List of G:As that should not be upgraded in the project.
      */
-    @Parameter(readonly = true, property = "ignoreGAs", defaultValue = "")
+    @Parameter(property = "ignoreGAs", defaultValue = "")
     List<String> ignoreGAs;
 
     /**
      * If true, the recorded channel file will be written to `target/recorded-channel.yaml`.
      */
-    @Parameter(readonly = true, property = "writeRecordedChannel", defaultValue = "true")
+    @Parameter(property = "writeRecordedChannel", defaultValue = "true")
     boolean writeRecordedChannel;
+
+    /**
+     * If true (default), only the execution root module will be processed by the plugin.
+     * If false, the root module and all sub-modules will be processed.
+     */
+    @Parameter(property = "processRootOnly", defaultValue = "true")
+    boolean processRootOnly;
 
     @Parameter(defaultValue = "${basedir}", readonly = true)
     File basedir;
