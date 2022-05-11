@@ -113,6 +113,7 @@ public class GenerateBomCommand implements Runnable {
                 continue;
             }
             ArtifactRef artifact = entry.getKey();
+            Dependency dependency = entry.getValue();
 
             // if channel was given, use it to override the dependency version
             String newVersion = artifact.getVersionString();
@@ -132,19 +133,8 @@ public class GenerateBomCommand implements Runnable {
             }
 
             // determine version property name and record the property
-            Properties properties = model.getProperties();
-            final String propertyName;
-            if (properties.getProperty(VERSION_PREFIX + artifact.getGroupId()) == null
-                    || properties.getProperty(VERSION_PREFIX + artifact.getGroupId()).equals(newVersion)) {
-                propertyName = VERSION_PREFIX + artifact.getGroupId();
-            } else if (properties.getProperty(VERSION_PREFIX + artifact.getGroupId() + "." + artifact.getArtifactId()) == null
-                    || properties.getProperty(VERSION_PREFIX + artifact.getGroupId() + "." + artifact.getArtifactId()).equals(newVersion)) {
-                propertyName = VERSION_PREFIX + artifact.getGroupId() + "." + artifact.getArtifactId();
-            } else {
-                throw new IllegalStateException(String.format("Detected multiple dependencies for %s:%s with different versions.",
-                        artifact.getGroupId(), artifact.getArtifactId()));
-            }
-            properties.put(propertyName, newVersion);
+            final String propertyName = determinePropertyName(model.getProperties(), artifact, dependency, newVersion);
+            model.getProperties().put(propertyName, newVersion);
 
             // add a managed dependency
             CliLogger.LOGGER.infof("Adding dependency %s:%s:%s", artifact.getGroupId(), artifact.getArtifactId(), newVersion);
@@ -158,6 +148,31 @@ public class GenerateBomCommand implements Runnable {
         } catch (IOException e) {
             throw new RuntimeException("Couldn't write output POM", e);
         }
+    }
+
+    private static String determinePropertyName(Properties existingProperties, ArtifactRef artifact,
+            Dependency dependency, String newVersion) {
+        /*// if the dependency version was configured with a property, try to use that original property name from the input POM
+        if (VersionUtils.isProperty(dependency.getVersion())) {
+            String originalPropertyName = VersionUtils.extractPropertyName(dependency.getVersion());
+            if (existingProperties.getProperty(originalPropertyName) == null
+                    || existingProperties.getProperty(originalPropertyName).equals(newVersion)) {
+                return originalPropertyName;
+            }
+        }*/
+        // try to use "version." + groupId
+        if (existingProperties.getProperty(VERSION_PREFIX + artifact.getGroupId()) == null
+                || existingProperties.getProperty(VERSION_PREFIX + artifact.getGroupId()).equals(newVersion)) {
+            return VERSION_PREFIX + artifact.getGroupId();
+        }
+        // try to use "version." + groupId + artifactId
+        if (existingProperties.getProperty(VERSION_PREFIX + artifact.getGroupId() + "." + artifact.getArtifactId()) == null
+                || existingProperties.getProperty(VERSION_PREFIX + artifact.getGroupId() + "." + artifact.getArtifactId()).equals(newVersion)) {
+            return VERSION_PREFIX + artifact.getGroupId() + "." + artifact.getArtifactId();
+        }
+        // not able to determine suitable property name
+        throw new IllegalStateException(String.format("Detected multiple dependencies for %s:%s with different versions.",
+                artifact.getGroupId(), artifact.getArtifactId()));
     }
 
     private static Dependency dependency(ArtifactRef ref, String versionPropertyName) {

@@ -1,4 +1,4 @@
-package org.wildfly.channelplugin.utils;
+package org.wildfly.channeltools.util;
 
 public final class VersionUtils {
 

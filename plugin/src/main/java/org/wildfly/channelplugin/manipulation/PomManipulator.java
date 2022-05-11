@@ -22,7 +22,7 @@ import org.commonjava.maven.ext.common.model.Project;
 import org.wildfly.channel.MavenArtifact;
 import org.wildfly.channelplugin.ChannelPluginLogger;
 import org.wildfly.channelplugin.utils.DependencyModel;
-import org.wildfly.channelplugin.utils.VersionUtils;
+import org.wildfly.channeltools.util.VersionUtils;
 
 /**
  * Provides functionality to override dependencies versions in POM files.

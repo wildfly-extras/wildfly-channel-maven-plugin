@@ -20,7 +20,7 @@ import org.wildfly.channel.ChannelMapper;
 import org.wildfly.channel.Stream;
 import org.wildfly.channel.version.VersionMatcher;
 import org.wildfly.channelplugin.utils.DependencyModel;
-import org.wildfly.channelplugin.utils.VersionUtils;
+import org.wildfly.channeltools.util.VersionUtils;
 
 import static com.soebes.itf.extension.assertj.MavenExecutionResultAssert.assertThat;
 
