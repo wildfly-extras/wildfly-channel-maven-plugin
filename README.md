@@ -1,8 +1,16 @@
-# Wildfly Channel Maven Plugin
+# Wildfly Channel Tools
+
+This repository contains set of experimental tools related to the 
+[wildfly-channel](https://github.com/wildfly-extras/wildfly-channel) library. Namely:
+
+* [Wildfly Channel Maven Plugin](#plugin),
+* [Wildfly Channel CLI Tool](#cli).
+
+## <a name="plugin"></a> Wildfly Channel Maven Plugin
 
 This plugin overrides dependency versions of a Maven project according to provided Wildfly Channel definition.
 
-## Usage
+### Usage Example
 
 (Currently, the project is not released, so you need to `mvn install` it locally...) 
 
@@ -19,11 +27,11 @@ mvn org.wildfly:wildfly-channel-maven-plugin:1.0-SNAPSHOT:upgrade \
 git diff
 ```
 
-## Goals
+### Goals
 
 * `upgrade`: Overrides dependencies version in the project according to given channel file.
 
-## Configuration Parameters
+### Configuration Parameters
 
 * `channelFile`: Path to a channel file on a local filesystem.
 * `channelGAV`: Alternative to above, the channel file would be obtained from a maven repo. (Not yet implemented.) 
@@ -34,3 +42,23 @@ git diff
   new managed dependencies. The dependency management section must already exist. This is very experimental, the point
   is to allow overriding transitive dependencies. If we wanted to have this, the final implementation should take 
   the real dependency tree into account, when figuring out which dependencies to inject.
+* `disableTlsVerification`: If true, TLS certificates of maven repositories are not validated.
+* `ignoreGAs`: Comma delimited list of dependency GAs that should not be upgraded in the project.
+* `processRootOnly`: If true (default), only dependencies in a root module are upgraded, submodules are not.
+
+## <a name="cli"></a> Wildfly Channel CLI Tool
+
+### Commands
+
+* `resolve-channel`: Takes a channel file containing version patterns, and turns it into a channel file containing
+  concrete versions.
+* `generate-bom`: Takes all dependencies defined in a project pom.xml file, and generates a BOM file.
+
+### Usage Example
+
+```shell
+java -jar wildfly-channel-tools-cli-1.0-SNAPSHOT-runnable.jar resolve-channel \
+     --channel-file eap-74-proposed-7.4-channel.yaml \
+     -o resolved-channel.yaml \
+     --remote-repo <maven repository url>
+```
