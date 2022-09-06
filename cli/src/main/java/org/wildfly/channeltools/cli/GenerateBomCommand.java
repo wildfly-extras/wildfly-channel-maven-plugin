@@ -122,7 +122,8 @@ public class GenerateBomCommand implements Runnable {
                 if (streamOptional.isPresent()) {
                     try {
                         MavenArtifact resolvedArtifact = channelSession.resolveMavenArtifact(artifact.getGroupId(),
-                                artifact.getArtifactId(), artifact.getType(), artifact.getClassifier());
+                                artifact.getArtifactId(), artifact.getType(), artifact.getClassifier(),
+                                artifact.getVersionString());
                         newVersion = resolvedArtifact.getVersion();
                     } catch (UnresolvedMavenArtifactException e) {
                         CliLogger.LOGGER.errorf(e, "Channel unable to resolve dependency %s", artifact);

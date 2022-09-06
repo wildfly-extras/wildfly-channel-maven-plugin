@@ -1,3 +1,4 @@
+schemaVersion: 1.0.0
 name: Sample Channel
 streams:
   - groupId: io.undertow

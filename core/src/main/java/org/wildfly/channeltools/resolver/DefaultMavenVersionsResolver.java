@@ -28,6 +28,7 @@ import java.util.stream.Collectors;
 
 import javax.net.ssl.SSLContext;
 
+import org.apache.commons.lang3.NotImplementedException;
 import org.apache.http.conn.ssl.NoopHostnameVerifier;
 import org.apache.http.ssl.SSLContexts;
 import org.apache.maven.repository.internal.MavenRepositorySystemUtils;
@@ -53,6 +54,8 @@ import org.eclipse.aether.transport.http.HttpTransporterFactory;
 import org.eclipse.aether.util.repository.AuthenticationBuilder;
 import org.eclipse.aether.version.Version;
 import org.jboss.logging.Logger;
+import org.wildfly.channel.ArtifactCoordinate;
+import org.wildfly.channel.UnresolvedMavenArtifactException;
 import org.wildfly.channel.spi.MavenVersionsResolver;
 
 import static java.util.Collections.emptySet;
@@ -141,6 +144,11 @@ public class DefaultMavenVersionsResolver implements MavenVersionsResolver {
             String version) {
         // artifact file is not needed, but returning null is not allowed ATM
         return NULL_FILE;
+    }
+
+    @Override
+    public List<File> resolveArtifacts(List<ArtifactCoordinate> list) throws UnresolvedMavenArtifactException {
+        throw new NotImplementedException("Not implemented");
     }
 
     private static void reportExceptions(VersionRangeResult versionRangeResult) {

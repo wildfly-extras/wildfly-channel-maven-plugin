@@ -1,4 +1,4 @@
----
+schemaVersion: 1.0.0
 name: Channel for EAP 7.4
 description: |-
   This channel provides EAP 7.4 Feature Packs.

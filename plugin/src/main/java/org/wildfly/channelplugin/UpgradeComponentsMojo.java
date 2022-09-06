@@ -214,7 +214,7 @@ public class UpgradeComponentsMojo extends AbstractMojo {
 
             try {
                 MavenArtifact mavenArtifact = channelSession.resolveMavenArtifact(artifactRef.getGroupId(),
-                        artifactRef.getArtifactId(), artifactRef.getType(), artifactRef.getClassifier());
+                        artifactRef.getArtifactId(), artifactRef.getType(), artifactRef.getClassifier(), null);
 
                 if (!mavenArtifact.getVersion().equals(artifactRef.getVersionString())) {
                     getLog().info("Overriding dependency version " + artifactRef.getGroupId()
@@ -235,7 +235,7 @@ public class UpgradeComponentsMojo extends AbstractMojo {
             for (Stream stream : channel.getStreams()) {
                 try {
                     MavenArtifact mavenArtifact = channelSession.resolveMavenArtifact(stream.getGroupId(),
-                            stream.getArtifactId(), "jar", null);
+                            stream.getArtifactId(), "jar", null, null);
                     SimpleArtifactRef artifactRef = new SimpleArtifactRef(mavenArtifact.getGroupId(),
                             mavenArtifact.getArtifactId(), mavenArtifact.getVersion(), mavenArtifact.getExtension(),
                             mavenArtifact.getClassifier());

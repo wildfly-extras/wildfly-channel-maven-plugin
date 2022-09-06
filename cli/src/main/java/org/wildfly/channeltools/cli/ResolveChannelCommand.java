@@ -45,7 +45,7 @@ public class ResolveChannelCommand implements Runnable {
             for (Stream stream : channel.getStreams()) {
                 try {
                     MavenArtifact resolvedArtifact = channelSession.resolveMavenArtifact(stream.getGroupId(),
-                            stream.getArtifactId(), "pom", null);
+                            stream.getArtifactId(), "pom", null, null);
                     CliLogger.LOGGER.infof("Stream %s:%s:%s version resolved to %s",
                             stream.getGroupId(), stream.getArtifactId(),
                             stream.getVersionPattern() != null ? stream.getVersionPattern() : stream.getVersion(),

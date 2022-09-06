@@ -37,9 +37,10 @@
         <maven.version>3.6.3</maven.version> <!-- Note that PME depends on 3.5.0 -->
         <maven-resolver.version>1.6.2</maven-resolver.version>
         <pme.version>4.7</pme.version>
-        <channel.version>1.0.0.Alpha12</channel.version>
+        <channel.version>1.0.0.Beta2</channel.version>
         <jupiter.version>5.7.2</jupiter.version>
         <assertj.version>3.22.0</assertj.version>
+        <itf.version>0.11.0</itf.version>
     </properties>
 
     <dependencyManagement>
@@ -186,6 +187,26 @@
                 <groupId>org.assertj</groupId>
                 <artifactId>assertj-core</artifactId>
                 <version>${assertj.version}</version>
+                <scope>test</scope>
+            </dependency>
+
+            <!-- Maven plugin test tooling -->
+            <dependency>
+                <groupId>com.soebes.itf.jupiter.extension</groupId>
+                <artifactId>itf-extension-maven</artifactId>
+                <version>${itf.version}</version>
+                <scope>test</scope>
+            </dependency>
+            <dependency>
+                <groupId>com.soebes.itf.jupiter.extension</groupId>
+                <artifactId>itf-assertj</artifactId>
+                <version>${itf.version}</version>
+                <scope>test</scope>
+            </dependency>
+            <dependency>
+                <groupId>com.soebes.itf.jupiter.extension</groupId>
+                <artifactId>itf-jupiter-extension</artifactId>
+                <version>${itf.version}</version>
                 <scope>test</scope>
             </dependency>
         </dependencies>
