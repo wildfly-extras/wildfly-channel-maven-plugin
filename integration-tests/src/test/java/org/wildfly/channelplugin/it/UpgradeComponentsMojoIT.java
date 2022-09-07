@@ -36,7 +36,6 @@ public class UpgradeComponentsMojoIT {
      */
     @MavenGoal("${project.groupId}:wildfly-channel-maven-plugin:${project.version}:upgrade")
     @SystemProperty(value = "channelFile", content = "channel.yaml")
-    @SystemProperty(value = "injectMissingDependencies", content = "true")
     @SystemProperty(value = "localRepository", content = "${maven.repo.local}")
     @SystemProperty(value = "ignoreGAs", content = "org.jboss:ignored-dep")
     @MavenTest
@@ -69,12 +68,6 @@ public class UpgradeComponentsMojoIT {
                     Assertions.assertThat(o.get().getVersion()).isEqualTo("2.0.9.Final-redhat-00001");
                 });
 
-        // verify dependency has been injected
-        Assertions.assertThat(dependencyModel.getDependency("org.jboss", "extra-dep", "jar", null)).satisfies(d -> {
-            Assertions.assertThat(d).isPresent();
-            Assertions.assertThat(d.get().getVersion()).isEqualTo("1.0.0.Final");
-        });
-
         // verify version specified by recursive property reference
         Assertions.assertThat(dependencyModel.getDependency("commons-io", "commons-io", "jar", null))
                 .satisfies(o -> {
@@ -102,9 +95,7 @@ public class UpgradeComponentsMojoIT {
                 .contains(
                         "io.undertow:undertow-core:2.2.17.SP1-redhat-00001",
                         "org.jboss.marshalling:jboss-marshalling:2.0.9.Final-redhat-00001",
-                        "org.jboss:extra-dep:1.0.0.Final",
-                        "commons-io:commons-io:2.10.1.redhat-00001",
-                        "org.jboss:ignored-dep:2.0.0.Final"
+                        "commons-io:commons-io:2.10.1.redhat-00001"
                 );
     }
 
