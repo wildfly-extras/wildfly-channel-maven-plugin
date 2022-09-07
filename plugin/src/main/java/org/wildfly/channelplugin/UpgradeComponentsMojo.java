@@ -99,10 +99,16 @@ public class UpgradeComponentsMojo extends AbstractMojo {
     boolean disableTlsVerification;
 
     /**
-     * List of G:As that should not be upgraded in the project.
+     * Comma separated list of dependency G:As that should not be upgraded.
      */
-    @Parameter(property = "ignoreGAs", defaultValue = "")
-    List<String> ignoreGAs;
+    @Parameter(property = "ignoreStreams", defaultValue = "")
+    List<String> ignoreStreams;
+
+    /**
+     * Comma separated list of module G:As that should not be processed.
+     */
+    @Parameter(property = "ignoreModules", defaultValue = "")
+    List<String> ignoreModules;
 
     /**
      * If true, the recorded channel file will be written to `target/recorded-channel.yaml`.
@@ -130,9 +136,10 @@ public class UpgradeComponentsMojo extends AbstractMojo {
 
     private Channel channel;
     private ChannelSession channelSession;
-    private List<ProjectRef> ignoredStreams;
+    private final List<ProjectRef> ignoredStreams = new ArrayList<>();
+    private final List<ProjectRef> ignoredModules = new ArrayList<>();
     private Set<ProjectVersionRef> projectGavs;
-    private final HashMap<Pair<String, String>, PomManipulator> manipulations = new HashMap<>();
+    private final HashMap<Pair<String, String>, PomManipulator> manipulators = new HashMap<>();
     private final HashMap<Pair<Project, String>, String> upgradedProperties = new HashMap<>();
 
     private void init() throws MojoExecutionException {
@@ -144,10 +151,8 @@ public class UpgradeComponentsMojo extends AbstractMojo {
         channelSession = new ChannelSession(Collections.singletonList(channel),
                 new DefaultMavenVersionsResolverFactory(remoteRepositories, localRepository, disableTlsVerification));
 
-        ignoredStreams = new ArrayList<>();
-        for (String ga : ignoreGAs) {
-            ignoredStreams.add(SimpleProjectRef.parse(ga));
-        }
+        ignoreStreams.forEach(ga -> ignoredStreams.add(SimpleProjectRef.parse(ga)));
+        ignoreModules.forEach(ga -> ignoredModules.add(SimpleProjectRef.parse(ga)));
     }
 
     @Override
@@ -169,17 +174,23 @@ public class UpgradeComponentsMojo extends AbstractMojo {
 
             // process project modules
             for (Project project: pmeProjects) {
-                getLog().info(String.format("Processing project %s:%s", project.getGroupId(), project.getArtifactId()));
+                ProjectRef moduleGA = project.getKey().asProjectRef();
+                if (ignoredModules.contains(moduleGA)) {
+                    getLog().info(String.format("Skipping module %s:%s", project.getGroupId(), project.getArtifactId()));
+                    continue;
+                }
+
+                getLog().info(String.format("Processing module %s:%s", project.getGroupId(), project.getArtifactId()));
 
                 // create manipulator for given module
                 PomManipulator manipulator = new PomManipulator(project);
-                manipulations.put(Pair.of(project.getGroupId(), project.getArtifactId()), manipulator);
+                manipulators.put(Pair.of(project.getGroupId(), project.getArtifactId()), manipulator);
 
                 processProject(project, manipulator);
             }
 
             // override modified poms
-            for (PomManipulator manipulator: manipulations.values()) {
+            for (PomManipulator manipulator: manipulators.values()) {
                 manipulator.writePom();
             }
 
@@ -237,7 +248,7 @@ public class UpgradeComponentsMojo extends AbstractMojo {
                 Project targetProject = projectProperty.getLeft();
                 String targetPropertyName = projectProperty.getRight();
                 // get manipulator for the module where the target property is located
-                PomManipulator targetManipulator = manipulations.get(
+                PomManipulator targetManipulator = manipulators.get(
                         Pair.of(targetProject.getGroupId(), targetProject.getArtifactId()));
                 targetManipulator.overrideProperty(targetPropertyName, newVersion);
             } else { // dependency version is hard-coded, can be directly overriden
