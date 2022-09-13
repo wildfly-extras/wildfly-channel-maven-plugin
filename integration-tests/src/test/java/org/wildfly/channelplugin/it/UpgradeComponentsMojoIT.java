@@ -37,7 +37,7 @@ public class UpgradeComponentsMojoIT {
     @MavenGoal("${project.groupId}:wildfly-channel-maven-plugin:${project.version}:upgrade")
     @SystemProperty(value = "channelFile", content = "channel.yaml")
     @SystemProperty(value = "localRepository", content = "${maven.repo.local}")
-    @SystemProperty(value = "ignoreGAs", content = "org.jboss:ignored-dep")
+    @SystemProperty(value = "ignoreStreams", content = "org.jboss:ignored-dep")
     @MavenTest
     void basic_project_test_case(MavenExecutionResult result) throws MalformedURLException {
         assertThat(result).isSuccessful();

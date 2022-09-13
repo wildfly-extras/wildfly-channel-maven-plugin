@@ -123,6 +123,12 @@ public class UpgradeComponentsMojo extends AbstractMojo {
     @Parameter(property = "writeRecordedChannel", defaultValue = "true")
     boolean writeRecordedChannel;
 
+    /**
+     * Comma separated list of propertyName=propertyValue. Given properties will be overridden to given values.
+     */
+    @Parameter(property = "overrideProperties")
+    List<String> overrideProperties;
+
     @Parameter(defaultValue = "${basedir}", readonly = true)
     File basedir;
 
@@ -265,6 +271,19 @@ public class UpgradeComponentsMojo extends AbstractMojo {
                 targetManipulator.overrideProperty(targetPropertyName, newVersion);
             } else { // dependency version is hard-coded, can be directly overriden
                 manipulator.overrideDependencyVersion(locatedDependency, newVersion);
+            }
+        }
+
+        for (String nameValue: overrideProperties) {
+            String[] split = nameValue.split("=");
+            if (split.length != 2) {
+                getLog().error(String.format("Can't interpret property to override settings: '%s'", nameValue));
+                continue;
+            }
+            String propertyName = split[0];
+            String propertyValue = split[1];
+            if (manipulator.overrideProperty(propertyName, propertyValue)) {
+                getLog().info(String.format("Property '%s' overridden to '%s'", propertyName, propertyValue));
             }
         }
 
