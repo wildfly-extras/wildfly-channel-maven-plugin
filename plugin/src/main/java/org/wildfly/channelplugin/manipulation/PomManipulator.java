@@ -54,6 +54,11 @@ public class PomManipulator {
                 newVersion, project.getModel());
     }
 
+    public void overrideDependencyVersion(Dependency d, String oldVersionString, String newVersion) throws XMLStreamException {
+        PomHelper.setDependencyVersion(eventReader, d.getGroupId(), d.getArtifactId(), oldVersionString,
+                newVersion, project.getModel());
+    }
+
     public boolean overrideProperty(String propertyName, String propertyValue) throws XMLStreamException {
         return PomHelper.setPropertyVersion(eventReader, null, propertyName, propertyValue);
     }

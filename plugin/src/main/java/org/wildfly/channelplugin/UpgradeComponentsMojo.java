@@ -111,7 +111,14 @@ public class UpgradeComponentsMojo extends AbstractMojo {
     List<String> ignoreModules;
 
     /**
-     * Comma separated list property names prefixes. Project properties that match one of these prefixes will not get
+     * Comma separated list of property names. Project properties that match one of these names will not get
+     * overridden.
+     */
+    @Parameter(property = "ignoreProperties", defaultValue = "")
+    List<String> ignoreProperties;
+
+    /**
+     * Comma separated list of property names prefixes. Project properties that match one of these prefixes will not get
      * overridden.
      */
     @Parameter(property = "ignorePropertiesPrefixedWith", defaultValue = "")
@@ -128,6 +135,14 @@ public class UpgradeComponentsMojo extends AbstractMojo {
      */
     @Parameter(property = "overrideProperties")
     List<String> overrideProperties;
+
+    /**
+     * Replace property reference in dependency version element with inlined version string, when it's not possible to
+     * override property value due to conflicting versions for different dependencies that use the property.
+     */
+    @Parameter(property = "inlineVersionOnConflict", defaultValue = "true")
+    boolean inlineVersionOnConflict;
+
 
     @Parameter(defaultValue = "${basedir}", readonly = true)
     File basedir;
@@ -231,7 +246,8 @@ public class UpgradeComponentsMojo extends AbstractMojo {
             }
 
             if (VersionUtils.isProperty(locatedDependency.getVersion())) { // dependency version is set from a property
-                String versionPropertyName = VersionUtils.extractPropertyName(locatedDependency.getVersion());
+                String originalVersionString = locatedDependency.getVersion();
+                String versionPropertyName = VersionUtils.extractPropertyName(originalVersionString);
                 Pair<Project, String> projectProperty = followProperties(pmeProject, versionPropertyName);
                 Project targetProject = projectProperty.getLeft();
                 String targetPropertyName = projectProperty.getRight();
@@ -252,20 +268,29 @@ public class UpgradeComponentsMojo extends AbstractMojo {
 
                 if (upgradedProperties.containsKey(projectProperty)) {
                     if (!upgradedProperties.get(projectProperty).equals(newVersion)) {
+                        // property has already been changed to different value
                         Dependency d = locatedDependency;
+                        String propertyName = projectProperty.getRight();
                         String currentPropertyValue = upgradedProperties.get(projectProperty);
-                        getLog().warn(String.format(
-                                "Can't upgrade %s:%s:%s to '%s', property '%s' was already upgraded to '%s'",
-                                d.getGroupId(), d.getArtifactId(), d.getVersion(), newVersion,
-                                projectProperty.getRight(),
-                                currentPropertyValue));
-                        continue;
+                        if (inlineVersionOnConflict) {
+                            getLog().warn(String.format("Inlining version string for %s:%s:%s, new version '%s'. " +
+                                    "The original version property '%s' has already been modified to '%s'.",
+                                    d.getGroupId(), d.getArtifactId(), d.getVersion(), newVersion, propertyName,
+                                    currentPropertyValue));
+                            manipulator.overrideDependencyVersion(locatedDependency, originalVersionString, newVersion);
+                        } else {
+                            getLog().warn(String.format(
+                                    "Can't upgrade %s:%s:%s to '%s', property '%s' was already upgraded to '%s'.",
+                                    d.getGroupId(), d.getArtifactId(), d.getVersion(), newVersion,
+                                    propertyName,
+                                    currentPropertyValue));
+                        }
+                        continue; // do not override the property again
                     }
-                } else {
-                    upgradedProperties.put(projectProperty, newVersion);
                 }
 
                 // get manipulator for the module where the target property is located
+                upgradedProperties.put(projectProperty, newVersion);
                 PomManipulator targetManipulator = manipulators.get(
                         Pair.of(targetProject.getGroupId(), targetProject.getArtifactId()));
                 targetManipulator.overrideProperty(targetPropertyName, newVersion);
@@ -293,6 +318,9 @@ public class UpgradeComponentsMojo extends AbstractMojo {
     }
 
     private boolean isIgnoredProperty(String propertyName) {
+        if (ignoreProperties.contains(propertyName)) {
+            return true;
+        }
         for (String prefix: ignorePropertiesPrefixedWith) {
             if (propertyName.startsWith(prefix)) {
                 return true;
