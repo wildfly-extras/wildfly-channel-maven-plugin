@@ -111,6 +111,13 @@ public class UpgradeComponentsMojo extends AbstractMojo {
     List<String> ignoreModules;
 
     /**
+     * Comma separated list property names prefixes. Project properties that match one of these prefixes will not get
+     * overridden.
+     */
+    @Parameter(property = "ignorePropertiesPrefixedWith", defaultValue = "")
+    List<String> ignorePropertiesPrefixedWith;
+
+    /**
      * If true, the recorded channel file will be written to `target/recorded-channel.yaml`.
      */
     @Parameter(property = "writeRecordedChannel", defaultValue = "true")
@@ -220,12 +227,20 @@ public class UpgradeComponentsMojo extends AbstractMojo {
             if (VersionUtils.isProperty(locatedDependency.getVersion())) { // dependency version is set from a property
                 String versionPropertyName = VersionUtils.extractPropertyName(locatedDependency.getVersion());
                 Pair<Project, String> projectProperty = followProperties(pmeProject, versionPropertyName);
+                Project targetProject = projectProperty.getLeft();
+                String targetPropertyName = projectProperty.getRight();
+
                 if (projectProperty == null) {
                     Dependency d = locatedDependency;
                     ChannelPluginLogger.LOGGER.errorf(
                             "Unable to upgrade %s:%s:%s to '%s', can't locate property '%s' in POM file %s",
                             d.getGroupId(), d.getArtifactId(), d.getVersion(), newVersion,
                             versionPropertyName, pmeProject.getPom().getPath());
+                    continue;
+                }
+
+                if (isIgnoredProperty(targetPropertyName)) {
+                    getLog().info(String.format("Ignoring property '%s' (ignored prefix)", targetPropertyName));
                     continue;
                 }
 
@@ -244,9 +259,6 @@ public class UpgradeComponentsMojo extends AbstractMojo {
                     upgradedProperties.put(projectProperty, newVersion);
                 }
 
-
-                Project targetProject = projectProperty.getLeft();
-                String targetPropertyName = projectProperty.getRight();
                 // get manipulator for the module where the target property is located
                 PomManipulator targetManipulator = manipulators.get(
                         Pair.of(targetProject.getGroupId(), targetProject.getArtifactId()));
@@ -259,6 +271,15 @@ public class UpgradeComponentsMojo extends AbstractMojo {
         if (writeRecordedChannel) {
             writeRecordedChannel(pmeProject);
         }
+    }
+
+    private boolean isIgnoredProperty(String propertyName) {
+        for (String prefix: ignorePropertiesPrefixedWith) {
+            if (propertyName.startsWith(prefix)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private Map<ArtifactRef, Dependency> collectResolvedProjectDependencies(Project pmeProject)
