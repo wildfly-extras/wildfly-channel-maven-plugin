@@ -10,6 +10,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Properties;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -132,9 +133,20 @@ public class UpgradeComponentsMojo extends AbstractMojo {
 
     /**
      * Comma separated list of propertyName=propertyValue. Given properties will be overridden to given values.
+     *
+     * This setting takes precedence over channel streams.
      */
     @Parameter(property = "overrideProperties")
     List<String> overrideProperties;
+
+    /**
+     * Comma separated list of groupId:artifactId:version triplets. All existing dependencies in the project with given
+     * groupId and artifactId will be set to given version.
+     *
+     * This setting takes precedence over channel streams.
+     */
+    @Parameter(property = "overrideDependencies")
+    List<String> overrideDependencies;
 
     /**
      * Replace property reference in dependency version element with inlined version string, when it's not possible to
@@ -233,8 +245,11 @@ public class UpgradeComponentsMojo extends AbstractMojo {
     private void processProject(Project pmeProject, PomManipulator manipulator)
             throws ManipulationException, XMLStreamException {
         Map<ArtifactRef, Dependency> resolvedProjectDependencies = collectResolvedProjectDependencies(pmeProject);
-        List<Pair<Dependency, MavenArtifact>> dependenciesToUpgrade = findDepenenciesToUpgrade(resolvedProjectDependencies);
 
+        List<String> overriddenProperties = performHardPropertyOverrides(manipulator);
+        List<Dependency> overriddenDependencies = performHardDependencyOverrides(resolvedProjectDependencies, manipulator);
+
+        List<Pair<Dependency, MavenArtifact>> dependenciesToUpgrade = findDepenenciesToUpgrade(resolvedProjectDependencies);
         for (Pair<Dependency, MavenArtifact> upgrade: dependenciesToUpgrade) {
             MavenArtifact artifactToUpgrade = upgrade.getRight();
             Dependency locatedDependency = upgrade.getLeft();
@@ -244,10 +259,20 @@ public class UpgradeComponentsMojo extends AbstractMojo {
                 ChannelPluginLogger.LOGGER.errorf("Couldn't locate dependency %s", artifactToUpgrade);
                 continue;
             }
+            if (overriddenDependencies.contains(locatedDependency)) {
+                // if there was a hard version override, the dependency is not processed again
+                continue;
+            }
 
             if (VersionUtils.isProperty(locatedDependency.getVersion())) { // dependency version is set from a property
                 String originalVersionString = locatedDependency.getVersion();
                 String versionPropertyName = VersionUtils.extractPropertyName(originalVersionString);
+
+                if (overriddenProperties.contains(versionPropertyName)) {
+                    // this property has been overridden based on `overrideProperties` parameter, do not process again
+                    continue;
+                }
+
                 Pair<Project, String> projectProperty = followProperties(pmeProject, versionPropertyName);
                 Project targetProject = projectProperty.getLeft();
                 String targetPropertyName = projectProperty.getRight();
@@ -260,7 +285,6 @@ public class UpgradeComponentsMojo extends AbstractMojo {
                             versionPropertyName, pmeProject.getPom().getPath());
                     continue;
                 }
-
                 if (isIgnoredProperty(targetPropertyName)) {
                     getLog().info(String.format("Ignoring property '%s' (ignored prefix)", targetPropertyName));
                     continue;
@@ -294,11 +318,24 @@ public class UpgradeComponentsMojo extends AbstractMojo {
                 PomManipulator targetManipulator = manipulators.get(
                         Pair.of(targetProject.getGroupId(), targetProject.getArtifactId()));
                 targetManipulator.overrideProperty(targetPropertyName, newVersion);
-            } else { // dependency version is hard-coded, can be directly overriden
+            } else { // dependency version is inlined in version element, can be directly overriden
                 manipulator.overrideDependencyVersion(locatedDependency, newVersion);
             }
         }
 
+        if (writeRecordedChannel) {
+            writeRecordedChannel(pmeProject);
+        }
+    }
+
+    /**
+     * Performs hard property overrides based on the `overrideProperties` parameter input.
+     *
+     * @param manipulator manipulator for current module
+     * @return list of overridden properties
+     */
+    private List<String> performHardPropertyOverrides(PomManipulator manipulator) throws XMLStreamException {
+        ArrayList<String> overriddenProperties = new ArrayList<>();
         for (String nameValue: overrideProperties) {
             String[] split = nameValue.split("=");
             if (split.length != 2) {
@@ -309,12 +346,47 @@ public class UpgradeComponentsMojo extends AbstractMojo {
             String propertyValue = split[1];
             if (manipulator.overrideProperty(propertyName, propertyValue)) {
                 getLog().info(String.format("Property '%s' overridden to '%s'", propertyName, propertyValue));
+                overriddenProperties.add(propertyName);
             }
         }
+        return overriddenProperties;
+    }
 
-        if (writeRecordedChannel) {
-            writeRecordedChannel(pmeProject);
+    /**
+     * Performs hard dependency versions overrides based on the `overrideDependencies` parameter input. These versions
+     * are inlined into the version elements, version properties are not followed.
+     *
+     * @param resolvedProjectDependencies collection of all resolved dependencies in the module
+     * @param manipulator manipulator for current module
+     * @return list of updated dependencies
+     */
+    private List<Dependency> performHardDependencyOverrides(Map<ArtifactRef, Dependency> resolvedProjectDependencies,
+            PomManipulator manipulator) throws XMLStreamException {
+        List<Dependency> overriddenDependencies = new ArrayList<>();
+        for (Dependency dependency: resolvedProjectDependencies.values()) {
+            Optional<String> overridenVersion = findOverridenVersion(dependency);
+            if (overridenVersion.isPresent()) {
+                manipulator.overrideDependencyVersion(dependency, overridenVersion.get());
+                overriddenDependencies.add(dependency);
+            }
         }
+        return overriddenDependencies;
+    }
+
+    private Optional<String> findOverridenVersion(Dependency dependency) {
+        for (String gav: overrideDependencies) {
+            String[] split = gav.split(":");
+            if (split.length != 3) {
+                continue;
+            }
+            String g = split[0];
+            String a = split[1];
+            String v = split[2];
+            if (dependency.getGroupId().equals(g) && dependency.getArtifactId().equals(a)) {
+                return Optional.of(v);
+            }
+        }
+        return Optional.empty();
     }
 
     private boolean isIgnoredProperty(String propertyName) {
