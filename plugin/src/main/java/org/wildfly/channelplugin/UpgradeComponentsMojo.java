@@ -437,6 +437,7 @@ public class UpgradeComponentsMojo extends AbstractMojo {
                 continue;
             }
             if (VersionUtils.isProperty(artifactRef.getVersionString())) {
+                // didn't manage to resolve dependency version
                 getLog().warn("Resolved dependency has version with property: " + artifactRef);
                 continue;
             }
@@ -448,11 +449,11 @@ public class UpgradeComponentsMojo extends AbstractMojo {
                         artifactRef.getVersionString());
 
                 if (!mavenArtifact.getVersion().equals(artifactRef.getVersionString())) {
-                    getLog().info("Overriding dependency version " + artifactRef.getGroupId()
+                    getLog().info("Updating dependency " + artifactRef.getGroupId()
                             + ":" + artifactRef.getArtifactId() + ":" + artifactRef.getVersionString()
                             + " to version " + mavenArtifact.getVersion());
-                    dependenciesToUpgrade.add(Pair.of(dependency, mavenArtifact));
                 }
+                dependenciesToUpgrade.add(Pair.of(dependency, mavenArtifact));
             } catch (UnresolvedMavenArtifactException e) {
                 getLog().debug("Can't resolve artifact: " + artifactRef, e);
             }
