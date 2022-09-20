@@ -16,9 +16,9 @@
     <name>Wildfly Channel Tools - Root Project</name>
 
     <scm>
-        <connection>scm:git:git@github.com:TomasHofman/wildfly-channel-maven-plugin.git</connection>
-        <developerConnection>scm:git:git@github.com:TomasHofman/wildfly-channel-maven-plugin.git</developerConnection>
-        <url>https://github.com/TomasHofman/wildfly-channel-maven-plugin</url>
+        <connection>scm:git:git@github.com:wildfly-extras/wildfly-channel-maven-plugin.git</connection>
+        <developerConnection>scm:git:git@github.com:wildfly-extras/wildfly-channel-maven-plugin.git</developerConnection>
+        <url>https://github.com/wildfly-extras/wildfly-channel-maven-plugin</url>
         <tag>HEAD</tag>
     </scm>
 
