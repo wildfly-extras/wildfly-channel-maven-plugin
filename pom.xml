@@ -25,9 +25,22 @@
     <modules>
         <module>plugin</module>
         <module>integration-tests</module>
-        <module>cli</module>
         <module>core</module>
     </modules>
+
+    <profiles>
+        <profile>
+            <id>cli</id>
+            <activation>
+                <property>
+                    <name>!skipCli</name>
+                </property>
+            </activation>
+            <modules>
+                <module>cli</module>
+            </modules>
+        </profile>
+    </profiles>
 
     <properties>
         <maven.compiler.source>11</maven.compiler.source>
