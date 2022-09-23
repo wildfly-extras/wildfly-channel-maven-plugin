@@ -177,6 +177,13 @@
                 </exclusions>
             </dependency>
 
+            <!-- Dependency tree generation -->
+            <dependency>
+                <groupId>org.apache.maven.shared</groupId>
+                <artifactId>maven-dependency-tree</artifactId>
+                <version>3.1.0</version>
+            </dependency>
+
             <!-- Testig -->
             <dependency>
                 <groupId>org.junit.jupiter</groupId>
