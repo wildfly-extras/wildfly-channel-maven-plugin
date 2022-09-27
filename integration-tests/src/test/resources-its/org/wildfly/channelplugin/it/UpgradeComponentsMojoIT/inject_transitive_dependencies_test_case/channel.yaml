@@ -1,6 +1,0 @@
-schemaVersion: 1.0.0
-name: Sample Channel
-streams:
-  - groupId: org.jboss.logging
-    artifactId: jboss-logging
-    versionPattern: 3.4.2.Final

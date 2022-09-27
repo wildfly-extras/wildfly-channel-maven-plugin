@@ -38,7 +38,6 @@ public class UpgradeComponentsMojoIT {
     @SystemProperty(value = "channelFile", content = "channel.yaml")
     @SystemProperty(value = "localRepository", content = "${maven.repo.local}")
     @SystemProperty(value = "ignoreStreams", content = "org.jboss:ignored-dep")
-    @SystemProperty(value = "injectTransitiveDependencies", content = "false")
     @MavenTest
     void basic_project_test_case(MavenExecutionResult result) throws MalformedURLException {
         assertThat(result).isSuccessful();
@@ -106,7 +105,6 @@ public class UpgradeComponentsMojoIT {
      */
     @MavenGoal("${project.groupId}:wildfly-channel-maven-plugin:${project.version}:upgrade")
     @SystemProperty(value = "channelFile", content = "channel.yaml")
-    @SystemProperty(value = "injectTransitiveDependencies", content = "false")
     @MavenTest
     void eap_bom_test_case(MavenExecutionResult result) throws MalformedURLException {
         assertThat(result).isSuccessful();
@@ -146,7 +144,6 @@ public class UpgradeComponentsMojoIT {
     @MavenGoal("${project.groupId}:wildfly-channel-maven-plugin:${project.version}:upgrade")
     @SystemProperty(value = "channelFile", content = "channel.yaml")
     @SystemProperty(value = "overrideProperties", content = "undertow.version=2.2.5.Final-Overridden")
-    @SystemProperty(value = "injectTransitiveDependencies", content = "false")
     @MavenTest
     void override_property_test_case(MavenExecutionResult result) {
         assertThat(result).isSuccessful();
@@ -171,7 +168,6 @@ public class UpgradeComponentsMojoIT {
     @MavenGoal("${project.groupId}:wildfly-channel-maven-plugin:${project.version}:upgrade")
     @SystemProperty(value = "channelFile", content = "channel.yaml")
     @SystemProperty(value = "overrideDependencies", content = "io.undertow:undertow-core:2.2.5.Final-Overridden")
-    @SystemProperty(value = "injectTransitiveDependencies", content = "false")
     @MavenTest
     void override_dependency_test_case(MavenExecutionResult result) {
         assertThat(result).isSuccessful();
@@ -187,31 +183,6 @@ public class UpgradeComponentsMojoIT {
                 .satisfies(o -> {
                     assertThat(o.isPresent());
                     assertThat(o.get().getVersion()).isEqualTo("2.2.5.Final-Overridden");
-                });
-    }
-
-
-    /**
-     * Injecting transitive dependencies, which are declared in the channel.
-     */
-    @MavenGoal("${project.groupId}:wildfly-channel-maven-plugin:${project.version}:upgrade")
-    @SystemProperty(value = "channelFile", content = "channel.yaml")
-    @SystemProperty(value = "injectTransitiveDependencies", content = "true")
-    @MavenTest
-    void inject_transitive_dependencies_test_case(MavenExecutionResult result) {
-        assertThat(result).isSuccessful();
-
-        Model model = result.getMavenProjectResult().getModel();
-        DependencyModel dependencyModel = new DependencyModel(model);
-
-        // verify no change in property
-        assertThat(model.getProperties().getProperty("undertow.version"))
-                .usingComparator(VersionMatcher.COMPARATOR).isEqualTo("2.2.5.Final");
-        // verify transitive dependency override has been injected
-        assertThat(dependencyModel.getDependency("org.jboss.logging", "jboss-logging", "jar", null))
-                .satisfies(o -> {
-                    assertThat(o.isPresent());
-                    assertThat(o.get().getVersion()).isEqualTo("3.4.2.Final");
                 });
     }
 }

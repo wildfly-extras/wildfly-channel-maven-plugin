@@ -6,10 +6,8 @@ import java.net.MalformedURLException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -22,25 +20,16 @@ import javax.xml.stream.XMLStreamException;
 
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.lang3.tuple.Pair;
-import org.apache.maven.artifact.Artifact;
 import org.apache.maven.execution.MavenSession;
 import org.apache.maven.model.Dependency;
 import org.apache.maven.plugin.AbstractMojo;
 import org.apache.maven.plugin.MojoExecutionException;
-import org.apache.maven.plugins.annotations.Component;
 import org.apache.maven.plugins.annotations.Mojo;
 import org.apache.maven.plugins.annotations.Parameter;
-import org.apache.maven.project.DefaultProjectBuildingRequest;
 import org.apache.maven.project.MavenProject;
-import org.apache.maven.project.ProjectBuildingRequest;
-import org.apache.maven.shared.dependency.graph.DependencyCollectorBuilder;
-import org.apache.maven.shared.dependency.graph.DependencyCollectorBuilderException;
-import org.apache.maven.shared.dependency.graph.DependencyNode;
-import org.apache.maven.shared.dependency.graph.traversal.CollectingDependencyNodeVisitor;
 import org.commonjava.maven.atlas.ident.ref.ArtifactRef;
 import org.commonjava.maven.atlas.ident.ref.ProjectRef;
 import org.commonjava.maven.atlas.ident.ref.ProjectVersionRef;
-import org.commonjava.maven.atlas.ident.ref.SimpleArtifactRef;
 import org.commonjava.maven.atlas.ident.ref.SimpleProjectRef;
 import org.commonjava.maven.atlas.ident.ref.SimpleProjectVersionRef;
 import org.commonjava.maven.ext.common.ManipulationException;
@@ -60,8 +49,6 @@ import org.wildfly.channel.UnresolvedMavenArtifactException;
 import org.wildfly.channelplugin.manipulation.PomManipulator;
 import org.wildfly.channeltools.resolver.DefaultMavenVersionsResolverFactory;
 import org.wildfly.channeltools.util.VersionUtils;
-
-import static org.wildfly.channeltools.util.ConversionUtils.toArtifactRef;
 
 /**
  * This tasks overrides dependencies versions according to provided channel file.
@@ -168,18 +155,9 @@ public class UpgradeComponentsMojo extends AbstractMojo {
     @Parameter(property = "inlineVersionOnConflict", defaultValue = "true")
     boolean inlineVersionOnConflict;
 
-    /**
-     * If true, transitive dependencies of the project that are also declared in the channel will be injected into root
-     * POM's dependencyManagement section.
-     */
-    @Parameter(property = "injectTransitiveDependencies", defaultValue = "true")
-    boolean injectTransitiveDependencies;
 
     @Parameter(defaultValue = "${basedir}", readonly = true)
     File basedir;
-
-    @Component(hint = "default")
-    private DependencyCollectorBuilder dependencyCollectorBuilder;
 
     @Inject
     MavenProject mavenProject;
@@ -203,7 +181,6 @@ public class UpgradeComponentsMojo extends AbstractMojo {
     private Set<ProjectVersionRef> projectGavs;
     private final HashMap<Pair<String, String>, PomManipulator> manipulators = new HashMap<>();
     private final HashMap<Pair<Project, String>, String> upgradedProperties = new HashMap<>();
-    private final Set<ProjectRef> declaredDependencies = new HashSet<>();
 
     private void init() throws MojoExecutionException {
         if (localRepository == null) {
@@ -249,11 +226,7 @@ public class UpgradeComponentsMojo extends AbstractMojo {
                 PomManipulator manipulator = new PomManipulator(project);
                 manipulators.put(Pair.of(project.getGroupId(), project.getArtifactId()), manipulator);
 
-                processModule(project, manipulator);
-            }
-
-            if (injectTransitiveDependencies) {
-                injectTransitiveDependencies();
+                processProject(project, manipulator);
             }
 
             // override modified poms
@@ -263,21 +236,15 @@ public class UpgradeComponentsMojo extends AbstractMojo {
 
         } catch (ManipulationException | XMLStreamException e) {
             throw new MojoExecutionException("Project parsing failed", e);
-        } catch (DependencyCollectorBuilderException e) {
-            throw new MojoExecutionException("Dependency collector error", e);
         }
     }
 
     /**
-     * Processes single project module:
-     * <li>collects all declared dependencies,</li>
-     * <li>performs hard overrides of properties and dependency versions in the module,</li>
-     * <li>upgrades dependencies according to channel definition.</li>
+     * Processes single maven module
      */
-    private void processModule(Project pmeProject, PomManipulator manipulator)
+    private void processProject(Project pmeProject, PomManipulator manipulator)
             throws ManipulationException, XMLStreamException {
         Map<ArtifactRef, Dependency> resolvedProjectDependencies = collectResolvedProjectDependencies(pmeProject);
-        resolvedProjectDependencies.keySet().forEach(a -> declaredDependencies.add(a.asProjectRef()));
 
         List<String> overriddenProperties = performHardPropertyOverrides(manipulator);
         List<Dependency> overriddenDependencies = performHardDependencyOverrides(resolvedProjectDependencies, manipulator);
@@ -334,8 +301,7 @@ public class UpgradeComponentsMojo extends AbstractMojo {
                                     "The original version property '%s' has already been modified to '%s'.",
                                     d.getGroupId(), d.getArtifactId(), d.getVersion(), newVersion, propertyName,
                                     currentPropertyValue));
-                            manipulator.overrideDependencyVersion(d.getGroupId(), d.getArtifactId(),
-                                    originalVersionString, newVersion);
+                            manipulator.overrideDependencyVersion(locatedDependency, originalVersionString, newVersion);
                         } else {
                             getLog().warn(String.format(
                                     "Can't upgrade %s:%s:%s to '%s', property '%s' was already upgraded to '%s'.",
@@ -353,40 +319,12 @@ public class UpgradeComponentsMojo extends AbstractMojo {
                         Pair.of(targetProject.getGroupId(), targetProject.getArtifactId()));
                 targetManipulator.overrideProperty(targetPropertyName, newVersion);
             } else { // dependency version is inlined in version element, can be directly overriden
-                manipulator.overrideDependencyVersion(toArtifactRef(locatedDependency), newVersion);
+                manipulator.overrideDependencyVersion(locatedDependency, newVersion);
             }
         }
 
         if (writeRecordedChannel) {
             writeRecordedChannel(pmeProject);
-        }
-    }
-
-    /**
-     * Injects all transitive dependencies that are present in channels into parent POM's dependencyManagement section.
-     *
-     * Call this method after all modules has been processed via the `processModule()` method.
-     */
-    private void injectTransitiveDependencies() throws DependencyCollectorBuilderException, XMLStreamException {
-        PomManipulator rootManipulator = manipulators.get(
-                Pair.of(mavenProject.getGroupId(), mavenProject.getArtifactId()));
-        Collection<Artifact> undeclaredDependencies = collectUndeclaredDependencies();
-        List<Artifact> dependenciesToInject = undeclaredDependencies.stream().sorted()
-                // filter only deps that have a stream defined in the channel
-                .filter(d -> channel.getStreams().stream().anyMatch(s -> s.getGroupId().equals(d.getGroupId())
-                        && s.getArtifactId().equals(d.getArtifactId())))
-                .collect(Collectors.toList());
-        for (Artifact a : dependenciesToInject) {
-            try {
-                MavenArtifact channelArtifact = channelSession.resolveMavenArtifact(a.getGroupId(), a.getArtifactId(),
-                        a.getType(), a.getClassifier(), a.getVersion());
-                ArtifactRef artifactRef = new SimpleArtifactRef(a.getGroupId(), a.getArtifactId(),
-                        channelArtifact.getVersion(), a.getType(), a.getClassifier());
-                getLog().info(String.format("Injecting undeclared dependency: %s", a));
-                rootManipulator.injectManagedDependency(artifactRef);
-            } catch (UnresolvedMavenArtifactException e) {
-                getLog().error(String.format("Unable to resolve dependency %s", a));
-            }
         }
     }
 
@@ -428,7 +366,7 @@ public class UpgradeComponentsMojo extends AbstractMojo {
         for (Dependency dependency: resolvedProjectDependencies.values()) {
             Optional<String> overridenVersion = findOverridenVersion(dependency);
             if (overridenVersion.isPresent()) {
-                manipulator.overrideDependencyVersion(toArtifactRef(dependency), overridenVersion.get());
+                manipulator.overrideDependencyVersion(dependency, overridenVersion.get());
                 overriddenDependencies.add(dependency);
             }
         }
@@ -586,34 +524,6 @@ public class UpgradeComponentsMojo extends AbstractMojo {
         } catch (IOException e) {
             throw new RuntimeException("Couldn't write recorder channel", e);
         }
-    }
-
-    /**
-     * Collects transitive dependencies from all project's modules.
-     *
-     * This has to be called after all submodules has been processed (so that all declared dependencies has been
-     * collected).
-     */
-    private Collection<Artifact> collectUndeclaredDependencies() throws DependencyCollectorBuilderException {
-        // This performs a traversal of a dependency tree of all submodules in the project. All discovered dependencies
-        // that are not directly declared in the project are considered transitive dependencies.
-        HashSet<Artifact> undeclaredDependencies = new HashSet<>();
-        for (MavenProject module: mavenProject.getCollectedProjects()) {
-            ProjectBuildingRequest buildingRequest =
-                    new DefaultProjectBuildingRequest(mavenSession.getProjectBuildingRequest());
-            buildingRequest.setProject(module);
-            DependencyNode rootNode = dependencyCollectorBuilder.collectDependencyGraph(buildingRequest, null);
-            CollectingDependencyNodeVisitor visitor = new CollectingDependencyNodeVisitor();
-            rootNode.accept(visitor);
-            visitor.getNodes().forEach(node -> {
-                Artifact artifact = node.getArtifact();
-                SimpleProjectRef projectRef = new SimpleProjectRef(artifact.getGroupId(), artifact.getArtifactId());
-                if (!declaredDependencies.contains(projectRef)) {
-                    undeclaredDependencies.add(artifact);
-                }
-            });
-        }
-        return undeclaredDependencies;
     }
 
     /**

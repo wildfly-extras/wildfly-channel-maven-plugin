@@ -15,13 +15,12 @@ import org.assertj.core.api.Assertions;
 import org.codehaus.mojo.versions.api.PomHelper;
 import org.codehaus.mojo.versions.rewriting.ModifiedPomXMLEventReader;
 import org.codehaus.stax2.XMLInputFactory2;
-import org.commonjava.maven.atlas.ident.ref.ArtifactRef;
-import org.commonjava.maven.atlas.ident.ref.SimpleArtifactRef;
 import org.commonjava.maven.ext.common.ManipulationException;
 import org.commonjava.maven.ext.common.model.Project;
 import org.commonjava.maven.ext.io.PomIO;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.wildfly.channel.MavenArtifact;
 import org.wildfly.channelplugin.utils.DependencyModel;
 
 public class PomManipulatorTestCase {
@@ -42,16 +41,16 @@ public class PomManipulatorTestCase {
     @Test
     public void testInsertManagedDependency()
             throws IOException, XMLStreamException, ManipulationException {
-        ArtifactRef dep = new SimpleArtifactRef("org.aesh", "aesh", "2.4.0", "jar", null);
+        MavenArtifact dep = new MavenArtifact("org.aesh", "aesh", "jar", null, "2.4.0", new File("."));
 
         DependencyModel model = readDependencyModel();
-        Assertions.assertThat(model.getDependency(dep.getGroupId(), dep.getArtifactId(), dep.getType(), null))
+        Assertions.assertThat(model.getDependency(dep.getGroupId(), dep.getArtifactId(), dep.getExtension(), null))
                 .isEmpty();
 
         PomManipulator.injectManagedDependency(eventReader, dep);
 
         model = readDependencyModel();
-        Assertions.assertThat(model.getDependency(dep.getGroupId(), dep.getArtifactId(), dep.getType(), null))
+        Assertions.assertThat(model.getDependency(dep.getGroupId(), dep.getArtifactId(), dep.getExtension(), null))
                 .satisfies(d -> {
                     Assertions.assertThat(d).isPresent();
                     Assertions.assertThat(d.get().getVersion()).isEqualTo("2.4.0");

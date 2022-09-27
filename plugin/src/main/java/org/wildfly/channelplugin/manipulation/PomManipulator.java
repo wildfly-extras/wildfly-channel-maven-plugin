@@ -9,13 +9,14 @@ import javax.xml.stream.XMLStreamException;
 import javax.xml.stream.events.XMLEvent;
 
 import org.apache.http.util.Asserts;
+import org.apache.maven.model.Dependency;
 import org.codehaus.mojo.versions.api.PomHelper;
 import org.codehaus.mojo.versions.rewriting.ModifiedPomXMLEventReader;
 import org.codehaus.plexus.util.IOUtil;
 import org.codehaus.plexus.util.WriterFactory;
 import org.codehaus.stax2.XMLInputFactory2;
-import org.commonjava.maven.atlas.ident.ref.ArtifactRef;
 import org.commonjava.maven.ext.common.model.Project;
+import org.wildfly.channel.MavenArtifact;
 
 /**
  * Provides functionality to manipulate properties and dependencies in a POM file.
@@ -48,22 +49,18 @@ public class PomManipulator {
         }
     }
 
-    public void overrideDependencyVersion(ArtifactRef d, String newVersion) throws XMLStreamException {
-        PomHelper.setDependencyVersion(eventReader, d.getGroupId(), d.getArtifactId(), d.getVersionString(),
+    public void overrideDependencyVersion(Dependency d, String newVersion) throws XMLStreamException {
+        PomHelper.setDependencyVersion(eventReader, d.getGroupId(), d.getArtifactId(), d.getVersion(),
                 newVersion, project.getModel());
     }
 
-    public void overrideDependencyVersion(String groupId, String artifactId, String oldVersionString, String newVersion) throws XMLStreamException {
-        PomHelper.setDependencyVersion(eventReader, groupId, artifactId, oldVersionString, newVersion,
-                project.getModel());
+    public void overrideDependencyVersion(Dependency d, String oldVersionString, String newVersion) throws XMLStreamException {
+        PomHelper.setDependencyVersion(eventReader, d.getGroupId(), d.getArtifactId(), oldVersionString,
+                newVersion, project.getModel());
     }
 
     public boolean overrideProperty(String propertyName, String propertyValue) throws XMLStreamException {
         return PomHelper.setPropertyVersion(eventReader, null, propertyName, propertyValue);
-    }
-
-    public void injectManagedDependency(ArtifactRef dependency) throws XMLStreamException {
-        injectManagedDependency(eventReader, dependency);
     }
 
     /**
@@ -89,9 +86,9 @@ public class PomManipulator {
     /**
      * This method attempts to inject new depenendency into at the end of the dependencyManagement section.
      * <p>
-     * The dependencyManagement section must be already present in the POM.
+     * TODO: The dependencyManagement section must be already present in the POM, it's not created if it's missing.
      */
-    static void injectManagedDependency(ModifiedPomXMLEventReader eventReader, ArtifactRef dependency)
+    static void injectManagedDependency(ModifiedPomXMLEventReader eventReader, MavenArtifact dep)
             throws XMLStreamException {
         eventReader.rewind();
 
@@ -107,9 +104,17 @@ public class PomManipulator {
                 if (event.asEndElement().getName().getLocalPart().equals(DEPENDENCIES)
                         && path.equals(DEPENDENCY_MANAGEMENT_PATH)) {
                     eventReader.mark(0);
-                    eventReader.replaceMark(0, composeDependencyElementString(dependency)
-                                    + "        </dependencies>"
-                    );
+                    eventReader.replaceMark(0, String.format(
+                            "    <!-- dependency injected by wildfly-channel-maven-plugin -->\n" +
+                                    "            <dependency>\n" +
+                                    "                <groupId>%s</groupId>\n" +
+                                    "                <artifactId>%s</artifactId>\n" +
+                                    "                <version>%s</version>\n" +
+                                    "                <type>%s</type>\n" +
+                                    "            </dependency>\n" +
+                                    "        </dependencies>",
+                            dep.getGroupId(), dep.getArtifactId(), dep.getVersion(), dep.getExtension()
+                    ));
                     eventReader.clearMark(0);
                     break;
                 }
@@ -117,22 +122,6 @@ public class PomManipulator {
                 path = stack.pop();
             }
         }
-    }
-
-    private static String composeDependencyElementString(ArtifactRef artifact) {
-        StringBuilder sb = new StringBuilder();
-        sb.append("    <dependency>\n");
-        sb.append(String.format("                <groupId>%s</groupId>\n", artifact.getGroupId()));
-        sb.append(String.format("                <artifactId>%s</artifactId>\n", artifact.getArtifactId()));
-        sb.append(String.format("                <version>%s</version>\n", artifact.getVersionString()));
-        if (artifact.getClassifier() != null) {
-            sb.append(String.format("                <classifier>%s</classifier>\n", artifact.getClassifier()));
-        }
-        if (!"jar".equals(artifact.getType())) {
-            sb.append(String.format("                <type>%s</type>\n", artifact.getType()));
-        }
-        sb.append("            </dependency>\n");
-        return sb.toString();
     }
 
 }

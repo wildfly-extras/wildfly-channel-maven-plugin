@@ -131,12 +131,6 @@
             </exclusions>
         </dependency>
 
-        <!-- Dependency tree generation -->
-        <dependency>
-            <groupId>org.apache.maven.shared</groupId>
-            <artifactId>maven-dependency-tree</artifactId>
-        </dependency>
-
         <!-- Testing -->
         <dependency>
             <groupId>org.junit.jupiter</groupId>
