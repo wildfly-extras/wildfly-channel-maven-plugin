@@ -48,7 +48,7 @@ public class PomManipulatorTestCase {
         Assertions.assertThat(model.getDependency(dep.getGroupId(), dep.getArtifactId(), dep.getType(), null))
                 .isEmpty();
 
-        PomManipulator.injectManagedDependency(eventReader, dep);
+        PomManipulator.injectManagedDependency(eventReader, dep, true);
 
         model = readDependencyModel();
         Assertions.assertThat(model.getDependency(dep.getGroupId(), dep.getArtifactId(), dep.getType(), null))

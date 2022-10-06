@@ -175,6 +175,17 @@ public class UpgradeComponentsMojo extends AbstractMojo {
     @Parameter(property = "injectTransitiveDependencies", defaultValue = "true")
     boolean injectTransitiveDependencies;
 
+    /**
+     * Comma separated list of dependency G:As, that can be injected without excluding its transitives. By default,
+     * transitive dependencies that need to be aligned are injected with exclusion of "*:*", so they don't bring any
+     * further transitives.
+     *
+     * Given G:A strings can use the '*' wildcard character at artifactId place. E.g. value "org.wildfly.core:*" means
+     * that all dependencies with groupId "org.wildfly.core" should be injected without excluding its transitives.
+     */
+    @Parameter(property = "injectWithoutExclusions")
+    List<String> injectWithoutExclusions;
+
     @Parameter(defaultValue = "${basedir}", readonly = true)
     File basedir;
 
@@ -204,6 +215,7 @@ public class UpgradeComponentsMojo extends AbstractMojo {
     private final HashMap<Pair<String, String>, PomManipulator> manipulators = new HashMap<>();
     private final HashMap<Pair<Project, String>, String> upgradedProperties = new HashMap<>();
     private final Set<ProjectRef> declaredDependencies = new HashSet<>();
+    private final List<ProjectRef> injectWithoutExclusionsRefs = new ArrayList<>();
 
     private void init() throws MojoExecutionException {
         if (localRepository == null) {
@@ -216,6 +228,7 @@ public class UpgradeComponentsMojo extends AbstractMojo {
 
         ignoreStreams.forEach(ga -> ignoredStreams.add(SimpleProjectRef.parse(ga)));
         ignoreModules.forEach(ga -> ignoredModules.add(SimpleProjectRef.parse(ga)));
+        injectWithoutExclusions.forEach(ga -> injectWithoutExclusionsRefs.add(SimpleProjectRef.parse(ga)));
     }
 
     @Override
@@ -380,10 +393,14 @@ public class UpgradeComponentsMojo extends AbstractMojo {
             try {
                 MavenArtifact channelArtifact = channelSession.resolveMavenArtifact(a.getGroupId(), a.getArtifactId(),
                         a.getType(), a.getClassifier(), a.getVersion());
-                ArtifactRef artifactRef = new SimpleArtifactRef(a.getGroupId(), a.getArtifactId(),
-                        channelArtifact.getVersion(), a.getType(), a.getClassifier());
-                getLog().info(String.format("Injecting undeclared dependency: %s", a));
-                rootManipulator.injectManagedDependency(artifactRef);
+                if (!channelArtifact.getVersion().equals(a.getVersion())) {
+                    ArtifactRef artifactRef = new SimpleArtifactRef(a.getGroupId(), a.getArtifactId(),
+                            channelArtifact.getVersion(), a.getType(), a.getClassifier());
+                    getLog().info(String.format("Injecting undeclared dependency: %s", a));
+                    boolean allowTransitives = injectWithoutExclusionsRefs.contains(artifactRef.asProjectVersionRef())
+                            || injectWithoutExclusionsRefs.contains(new SimpleProjectRef(a.getGroupId(), "*"));
+                    rootManipulator.injectManagedDependency(artifactRef, allowTransitives);
+                }
             } catch (UnresolvedMavenArtifactException e) {
                 getLog().error(String.format("Unable to resolve dependency %s", a));
             }

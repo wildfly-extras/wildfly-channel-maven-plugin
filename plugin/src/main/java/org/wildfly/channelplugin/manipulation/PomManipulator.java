@@ -62,8 +62,8 @@ public class PomManipulator {
         return PomHelper.setPropertyVersion(eventReader, null, propertyName, propertyValue);
     }
 
-    public void injectManagedDependency(ArtifactRef dependency) throws XMLStreamException {
-        injectManagedDependency(eventReader, dependency);
+    public void injectManagedDependency(ArtifactRef dependency, boolean allowTransitives) throws XMLStreamException {
+        injectManagedDependency(eventReader, dependency, allowTransitives);
     }
 
     /**
@@ -91,8 +91,8 @@ public class PomManipulator {
      * <p>
      * The dependencyManagement section must be already present in the POM.
      */
-    static void injectManagedDependency(ModifiedPomXMLEventReader eventReader, ArtifactRef dependency)
-            throws XMLStreamException {
+    static void injectManagedDependency(ModifiedPomXMLEventReader eventReader, ArtifactRef dependency,
+            boolean allowTransitives) throws XMLStreamException {
         eventReader.rewind();
 
         Stack<String> stack = new Stack<String>();
@@ -107,7 +107,7 @@ public class PomManipulator {
                 if (event.asEndElement().getName().getLocalPart().equals(DEPENDENCIES)
                         && path.equals(DEPENDENCY_MANAGEMENT_PATH)) {
                     eventReader.mark(0);
-                    eventReader.replaceMark(0, composeDependencyElementString(dependency)
+                    eventReader.replaceMark(0, composeDependencyElementString(dependency, allowTransitives)
                                     + "        </dependencies>"
                     );
                     eventReader.clearMark(0);
@@ -119,7 +119,7 @@ public class PomManipulator {
         }
     }
 
-    private static String composeDependencyElementString(ArtifactRef artifact) {
+    private static String composeDependencyElementString(ArtifactRef artifact, boolean allowTransitives) {
         StringBuilder sb = new StringBuilder();
         sb.append("    <dependency>\n");
         sb.append(String.format("                <groupId>%s</groupId>\n", artifact.getGroupId()));
@@ -130,6 +130,14 @@ public class PomManipulator {
         }
         if (!"jar".equals(artifact.getType())) {
             sb.append(String.format("                <type>%s</type>\n", artifact.getType()));
+        }
+        if (!allowTransitives) {
+            sb.append("                <exclusions>\n");
+            sb.append("                    <exclusion>\n");
+            sb.append("                        <groupId>*</groupId>\n");
+            sb.append("                        <artifactId>*</artifactId>\n");
+            sb.append("                    </exclusion>\n");
+            sb.append("                </exclusions>\n");
         }
         sb.append("            </dependency>\n");
         return sb.toString();
