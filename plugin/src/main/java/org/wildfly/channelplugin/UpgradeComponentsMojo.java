@@ -27,14 +27,13 @@ import org.apache.maven.execution.MavenSession;
 import org.apache.maven.model.Dependency;
 import org.apache.maven.plugin.AbstractMojo;
 import org.apache.maven.plugin.MojoExecutionException;
-import org.apache.maven.plugins.annotations.Component;
 import org.apache.maven.plugins.annotations.Mojo;
 import org.apache.maven.plugins.annotations.Parameter;
 import org.apache.maven.project.DefaultProjectBuildingRequest;
 import org.apache.maven.project.MavenProject;
 import org.apache.maven.project.ProjectBuildingRequest;
-import org.apache.maven.shared.dependency.graph.DependencyCollectorBuilder;
-import org.apache.maven.shared.dependency.graph.DependencyCollectorBuilderException;
+import org.apache.maven.shared.dependency.graph.DependencyGraphBuilder;
+import org.apache.maven.shared.dependency.graph.DependencyGraphBuilderException;
 import org.apache.maven.shared.dependency.graph.DependencyNode;
 import org.apache.maven.shared.dependency.graph.traversal.CollectingDependencyNodeVisitor;
 import org.commonjava.maven.atlas.ident.ref.ArtifactRef;
@@ -189,8 +188,8 @@ public class UpgradeComponentsMojo extends AbstractMojo {
     @Parameter(defaultValue = "${basedir}", readonly = true)
     File basedir;
 
-    @Component(hint = "default")
-    private DependencyCollectorBuilder dependencyCollectorBuilder;
+    @Inject
+    DependencyGraphBuilder dependencyGraphBuilder;
 
     @Inject
     MavenProject mavenProject;
@@ -276,7 +275,7 @@ public class UpgradeComponentsMojo extends AbstractMojo {
 
         } catch (ManipulationException | XMLStreamException e) {
             throw new MojoExecutionException("Project parsing failed", e);
-        } catch (DependencyCollectorBuilderException e) {
+        } catch (DependencyGraphBuilderException e) {
             throw new MojoExecutionException("Dependency collector error", e);
         }
     }
@@ -380,7 +379,7 @@ public class UpgradeComponentsMojo extends AbstractMojo {
      *
      * Call this method after all modules has been processed via the `processModule()` method.
      */
-    private void injectTransitiveDependencies() throws DependencyCollectorBuilderException, XMLStreamException {
+    private void injectTransitiveDependencies() throws DependencyGraphBuilderException, XMLStreamException {
         PomManipulator rootManipulator = manipulators.get(
                 Pair.of(mavenProject.getGroupId(), mavenProject.getArtifactId()));
         Collection<Artifact> undeclaredDependencies = collectUndeclaredDependencies();
@@ -611,7 +610,7 @@ public class UpgradeComponentsMojo extends AbstractMojo {
      * This has to be called after all submodules has been processed (so that all declared dependencies has been
      * collected).
      */
-    private Collection<Artifact> collectUndeclaredDependencies() throws DependencyCollectorBuilderException {
+    private Collection<Artifact> collectUndeclaredDependencies() throws DependencyGraphBuilderException {
         // This performs a traversal of a dependency tree of all submodules in the project. All discovered dependencies
         // that are not directly declared in the project are considered transitive dependencies.
         HashSet<Artifact> undeclaredDependencies = new HashSet<>();
@@ -619,7 +618,7 @@ public class UpgradeComponentsMojo extends AbstractMojo {
             ProjectBuildingRequest buildingRequest =
                     new DefaultProjectBuildingRequest(mavenSession.getProjectBuildingRequest());
             buildingRequest.setProject(module);
-            DependencyNode rootNode = dependencyCollectorBuilder.collectDependencyGraph(buildingRequest, null);
+            DependencyNode rootNode = dependencyGraphBuilder.buildDependencyGraph(buildingRequest, null);
             CollectingDependencyNodeVisitor visitor = new CollectingDependencyNodeVisitor();
             rootNode.accept(visitor);
             visitor.getNodes().forEach(node -> {
