@@ -1,25 +1,33 @@
 # Wildfly Channel Maven Plugin
 
-This plugin overrides dependency versions in a Maven project according to provided Wildfly Channel definition.
+This plugin overrides dependency versions in a Maven project according to provided 
+[Wildfly Channel](https://github.com/wildfly-extras/wildfly-channel) definition.
 
-The plugin has ability to modify dependency versions directly defined in one of project's submodules. Dependencies can
-be located in either the "dependencyManagement" or "dependencies" sections. It can handle dependencies where the version
-is inlined directly in the version element, or referenced via a property.
+The plugin has the following abilities:
 
-It is not possible to override dependencies or properties inheritted from parents outside the project. As well, it is
-not possible to override transitively inheritted dependencies.
+* Modify versions of dependencies defined in both the project root module and project submodules.
+* Dependencies to modify can be defined in both the "dependencyManagement" and the "dependencies" sections of the 
+  `pom.xml` file.
+* Dependency version strings that should be modified can be inlined directly in the `<dependency>/<version>` element, 
+  or referenced via a property.
+
+The plugin is not able to align dependencies when:
+
+* A dependency is inherited from a parent `pom.xml` which is not part of the target project structure.
+* A dependency version property is inherited from a parent `pom.xml` which is not part of the target project structure.
 
 ### Goals
 
-* `upgrade`: Overrides dependencies version in the project according to given channel file.
+* `upgrade`: Overrides dependencies versions in a project according to given Wildfly Channel file.
 
 ### Configuration Parameters
 
-* `channelFile`: Path to a channel file on a local filesystem.
+* `channelFile`: Path to a Wildfly Channel file on a local filesystem.
 * `channelGAV`: Alternative to above, the channel file would be obtained from a maven repo.
 * `localRepository`: Local maven repository path. Defaults to `~/.m2/repository`.
 * `remoteRepositories`: Comma delimited list of remote repositories, which will be used for resolution of available 
-  component versions. This is only needed when working with channel containing version patterns.
+  dependency versions. This is only needed when working with channel containing version patterns (final dependency 
+  version is determined dynamically according to what versions are available in given remote Maven repositories).
 * `ignoreStreams`: Comma delimited list of "groupId:artifactId" strings, representing dependencies that should not be 
    modified.
 * `ignoreProperties`: Comma delimited list of property names in the project that should not be modified.
@@ -47,7 +55,11 @@ not possible to override transitively inheritted dependencies.
 
 ## Usage Examples
 
-Simple use case, allign all dependencies according to a channel file:
+(See additional examples, including sample files, in the [examples](examples/README.md) directory.)
+
+### Example 1
+
+Align all dependencies according to a channel file:
 
 ```shell
 # navigate to a maven project
@@ -61,14 +73,19 @@ mvn org.wildfly:wildfly-channel-maven-plugin:upgrade \
 git diff
 ```
 
-More complex use case - also overrides the "version.org.wildfly.core" property, suppresses any changes in properties
-that start with the "legacy." string, and completely leaves out the "org.jboss.eap:wildfly-legacy-ee-bom" submodule
-from the processing:
+### Example 2
+
+More complex use case:
+
+* override the "version.dep1" property to "1.0.2",
+* suppress any changes in properties that start with the "legacy." string,
+* do not process the "project.group:submodule1" submodule (no changes will be made to that `pom.xml`),
+* align all remaining dependencies, not affected by above rules, to versions defined in given channel file.
 
 ```shell
 mvn org.wildfly:wildfly-channel-maven-plugin:upgrade \
    -DchannelFile=<path/to/channel.yaml> \
-   -DoverrideProperties=version.org.wildfly.core=19.0.0.Beta16-redhat-00001 \
+   -DoverrideProperties=version.dep1=1.0.2 \
    -DignorePropertiesPrefixedWith=legacy. \
-   -DignoreModules=org.jboss.eap:wildfly-legacy-ee-bom
+   -DignoreModules=project.group:submodule1
 ```
