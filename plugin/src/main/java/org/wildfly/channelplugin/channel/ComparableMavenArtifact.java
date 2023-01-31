@@ -5,6 +5,7 @@ import org.wildfly.channel.MavenArtifact;
 /**
  * Extension of the MavenArtifact class which defines the `equals()` method.
  */
+@Deprecated
 public class ComparableMavenArtifact extends MavenArtifact {
 
     public ComparableMavenArtifact(MavenArtifact a) {

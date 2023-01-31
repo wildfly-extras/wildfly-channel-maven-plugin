@@ -18,8 +18,10 @@
 package org.wildfly.channeltools.resolver;
 
 import java.io.File;
+import java.net.URL;
 import java.security.GeneralSecurityException;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -55,6 +57,8 @@ import org.eclipse.aether.util.repository.AuthenticationBuilder;
 import org.eclipse.aether.version.Version;
 import org.jboss.logging.Logger;
 import org.wildfly.channel.ArtifactCoordinate;
+import org.wildfly.channel.ChannelMetadataCoordinate;
+import org.wildfly.channel.Repository;
 import org.wildfly.channel.UnresolvedMavenArtifactException;
 import org.wildfly.channel.spi.MavenVersionsResolver;
 
@@ -74,12 +78,12 @@ public class DefaultMavenVersionsResolver implements MavenVersionsResolver {
     private final String localRepositoryPath;
     private final boolean disableTlsVerification;
 
-    DefaultMavenVersionsResolver(List<String> remoteRepositoryUrls, String localRepositoryPath, boolean disableTlsVerification) {
+    DefaultMavenVersionsResolver(Collection<Repository> remoteRepositories, String localRepositoryPath, boolean disableTlsVerification) {
         this.disableTlsVerification = disableTlsVerification;
         this.localRepositoryPath = Objects.requireNonNullElse(localRepositoryPath, LOCAL_MAVEN_REPO);
-        this.remoteRepositories = new ArrayList<>(remoteRepositoryUrls.size());
-        for (int i = 0; i < remoteRepositoryUrls.size(); i++) {
-            logger.debugf("Adding remote repository %s", remoteRepositoryUrls.get(i));
+        this.remoteRepositories = new ArrayList<>(remoteRepositories.size());
+        for (Repository repository: remoteRepositories) {
+            logger.debugf("Adding remote repository %s", repository.getUrl());
 
             // hack to disable TLS verification
             SSLContext sslcontext;
@@ -89,8 +93,8 @@ public class DefaultMavenVersionsResolver implements MavenVersionsResolver {
                 throw new RuntimeException("Couldn't build SSLContext", e);
             }
 
-            RemoteRepository.Builder remoteRepositoryBuilder = new RemoteRepository.Builder("repo-" + i, "default",
-                    remoteRepositoryUrls.get(i));
+            RemoteRepository.Builder remoteRepositoryBuilder = new RemoteRepository.Builder(repository.getId(), "default",
+                    repository.getUrl());
             if (this.disableTlsVerification) {
                 remoteRepositoryBuilder.setAuthentication(new AuthenticationBuilder()
                         .addHostnameVerifier(NoopHostnameVerifier.INSTANCE)
@@ -106,7 +110,7 @@ public class DefaultMavenVersionsResolver implements MavenVersionsResolver {
                             }
                         }).build());
             }
-            remoteRepositories.add(remoteRepositoryBuilder.build());
+            this.remoteRepositories.add(remoteRepositoryBuilder.build());
         }
 
         system = newRepositorySystem();
@@ -151,6 +155,22 @@ public class DefaultMavenVersionsResolver implements MavenVersionsResolver {
         throw new NotImplementedException("Not implemented");
     }
 
+    @Override
+    public List<URL> resolveChannelMetadata(List<? extends ChannelMetadataCoordinate> manifestCoords)
+            throws UnresolvedMavenArtifactException {
+        return null;
+    }
+
+    @Override
+    public String getMetadataReleaseVersion(String groupId, String artifactId) {
+        return null;
+    }
+
+    @Override
+    public String getMetadataLatestVersion(String groupId, String artifactId) {
+        return null;
+    }
+
     private static void reportExceptions(VersionRangeResult versionRangeResult) {
         // report all exceptions that are not MetadataNotFoundException, metadata are always missing in local
         // repositories
@@ -179,7 +199,7 @@ public class DefaultMavenVersionsResolver implements MavenVersionsResolver {
         return session;
     }
 
-    public RepositorySystem newRepositorySystem() {
+    public static RepositorySystem newRepositorySystem() {
         final DefaultServiceLocator locator = MavenRepositorySystemUtils.newServiceLocator();
         locator.addService(RepositoryConnectorFactory.class, BasicRepositoryConnectorFactory.class);
         locator.addService(TransporterFactory.class, WagonTransporterFactory.class);

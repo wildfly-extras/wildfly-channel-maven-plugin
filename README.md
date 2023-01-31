@@ -24,6 +24,8 @@ The plugin is not able to align dependencies when:
 
 * `channelFile`: Path to a Wildfly Channel file on a local filesystem.
 * `channelGAV`: Alternative to above, the channel file would be obtained from a maven repo.
+* `manifestFile`: Path to a Wildfly Channel manifest file on a local filesystem.
+* `manifestGAV`: Alternative to above, the manifest file would be obtained from a maven repo.
 * `localRepository`: Local maven repository path. Defaults to `~/.m2/repository`.
 * `remoteRepositories`: Comma delimited list of remote repositories, which will be used for resolution of available 
   dependency versions. This is only needed when working with channel containing version patterns (final dependency 
@@ -42,10 +44,6 @@ The plugin is not able to align dependencies when:
   versions overrides. All dependencies with given groupId and artifactId in all project submodules will be overridden to
   given versions. The version will be inlined in the version element. This takes preference over modifications inferred
   from the channel.
-* `disableTlsVerification`: If set to true, TLS certificates of maven repositories will not be validated.
-* `writeRecordedChannel`: Should a "recorded channel" be written to `target/recorder-channel.yaml`? Default is 'true'.
-  ("Recorded channel" contains a subset of streams from the input channel that were detected in the project which
-  the plugin is applied to, and the streams are always resolved to specific versions.)
 <!--
 * `injectMissingDependencies`: Inject all streams from the channel, that weren't already present in the POM file, as
   new managed dependencies. The dependency management section must already exist. This is very experimental, the point

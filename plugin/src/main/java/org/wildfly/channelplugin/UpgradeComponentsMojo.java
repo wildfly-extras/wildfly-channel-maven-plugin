@@ -1,9 +1,8 @@
 package org.wildfly.channelplugin;
 
 import java.io.File;
-import java.io.IOException;
 import java.net.MalformedURLException;
-import java.nio.file.Files;
+import java.net.URL;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -12,6 +11,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Properties;
 import java.util.Set;
@@ -20,7 +20,7 @@ import java.util.stream.Collectors;
 import javax.inject.Inject;
 import javax.xml.stream.XMLStreamException;
 
-import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.tuple.Pair;
 import org.apache.maven.artifact.Artifact;
 import org.apache.maven.execution.MavenSession;
@@ -32,6 +32,7 @@ import org.apache.maven.plugins.annotations.Parameter;
 import org.apache.maven.project.DefaultProjectBuildingRequest;
 import org.apache.maven.project.MavenProject;
 import org.apache.maven.project.ProjectBuildingRequest;
+import org.apache.maven.repository.internal.MavenRepositorySystemUtils;
 import org.apache.maven.shared.dependency.graph.DependencyGraphBuilder;
 import org.apache.maven.shared.dependency.graph.DependencyGraphBuilderException;
 import org.apache.maven.shared.dependency.graph.DependencyNode;
@@ -46,18 +47,22 @@ import org.commonjava.maven.ext.common.ManipulationException;
 import org.commonjava.maven.ext.common.model.Project;
 import org.commonjava.maven.ext.core.ManipulationSession;
 import org.commonjava.maven.ext.io.PomIO;
+import org.eclipse.aether.DefaultRepositorySystemSession;
 import org.eclipse.aether.RepositorySystem;
 import org.eclipse.aether.artifact.DefaultArtifact;
+import org.eclipse.aether.repository.LocalRepository;
+import org.eclipse.aether.repository.LocalRepositoryManager;
 import org.eclipse.aether.resolution.ArtifactRequest;
 import org.eclipse.aether.resolution.ArtifactResolutionException;
 import org.eclipse.aether.resolution.ArtifactResult;
 import org.wildfly.channel.Channel;
+import org.wildfly.channel.ChannelManifestCoordinate;
 import org.wildfly.channel.ChannelMapper;
 import org.wildfly.channel.ChannelSession;
-import org.wildfly.channel.MavenArtifact;
+import org.wildfly.channel.Repository;
 import org.wildfly.channel.UnresolvedMavenArtifactException;
+import org.wildfly.channel.maven.VersionResolverFactory;
 import org.wildfly.channelplugin.manipulation.PomManipulator;
-import org.wildfly.channeltools.resolver.DefaultMavenVersionsResolverFactory;
 import org.wildfly.channeltools.util.VersionUtils;
 
 import static org.wildfly.channeltools.util.ConversionUtils.toArtifactRef;
@@ -79,18 +84,34 @@ public class UpgradeComponentsMojo extends AbstractMojo {
     /**
      * Path to the channel definition file on a local filesystem.
      * <p>
-     * Alternative for the `channelGAV` parameter.
+     * Exactly one of 'channelFile', 'manifestFile', 'channelGAV', 'manifestGAV' can be set.
      */
     @Parameter(required = false, property = "channelFile")
     String channelFile;
 
     /**
+     * Path to the channel manifest file on a local filesystem.
+     * <p>
+     * Exactly one of 'channelFile', 'manifestFile', 'channelGAV', 'manifestGAV' can be set.
+     */
+    @Parameter(required = false, property = "manifestFile")
+    String manifestFile;
+
+    /**
      * GAV of an artifact than contains the channel file.
      * <p>
-     * Alternative for the `channelFile` parameter.
+     * Exactly one of 'channelFile', 'manifestFile', 'channelGAV', 'manifestGAV' can be set.
      */
     @Parameter(required = false, property = "channelGAV")
     String channelGAV;
+
+    /**
+     * GAV of an artifact than contains the channel file.
+     * <p>
+     * Exactly one of 'channelFile', 'manifestFile', 'channelGAV', 'manifestGAV' can be set.
+     */
+    @Parameter(required = false, property = "manifestGAV")
+    String manifestGAV;
 
     /**
      * Comma separated list of remote repositories URLs, that should be used to resolve artifacts.
@@ -102,14 +123,7 @@ public class UpgradeComponentsMojo extends AbstractMojo {
      * Local repository path.
      */
     @Parameter(property = "localRepository")
-    String localRepository;
-
-    /**
-     * Disables TLS verification, in case the remote maven repository uses a self-signed or otherwise
-     * invalid certificate.
-     */
-    @Parameter(property = "disableTlsVerification", defaultValue = "false")
-    boolean disableTlsVerification;
+    String localRepositoryPath;
 
     /**
      * Comma separated list of dependency G:As that should not be upgraded.
@@ -138,14 +152,8 @@ public class UpgradeComponentsMojo extends AbstractMojo {
     List<String> ignorePropertiesPrefixedWith;
 
     /**
-     * If true, the recorded channel file will be written to `target/recorded-channel.yaml`.
-     */
-    @Parameter(property = "writeRecordedChannel", defaultValue = "true")
-    boolean writeRecordedChannel;
-
-    /**
      * Comma separated list of propertyName=propertyValue. Given properties will be overridden to given values.
-     *
+     * <p>
      * This setting takes precedence over channel streams.
      */
     @Parameter(property = "overrideProperties")
@@ -154,7 +162,7 @@ public class UpgradeComponentsMojo extends AbstractMojo {
     /**
      * Comma separated list of groupId:artifactId:version triplets. All existing dependencies in the project with given
      * groupId and artifactId will be set to given version.
-     *
+     * <p>
      * This setting takes precedence over channel streams.
      */
     @Parameter(property = "overrideDependencies")
@@ -178,15 +186,12 @@ public class UpgradeComponentsMojo extends AbstractMojo {
      * Comma separated list of dependency G:As, that can be injected without excluding its transitives. By default,
      * transitive dependencies that need to be aligned are injected with exclusion of "*:*", so they don't bring any
      * further transitives.
-     *
+     * <p>
      * Given G:A strings can use the '*' wildcard character at artifactId place. E.g. value "org.wildfly.core:*" means
      * that all dependencies with groupId "org.wildfly.core" should be injected without excluding its transitives.
      */
     @Parameter(property = "injectWithoutExclusions")
     List<String> injectWithoutExclusions;
-
-    @Parameter(defaultValue = "${basedir}", readonly = true)
-    File basedir;
 
     @Inject
     DependencyGraphBuilder dependencyGraphBuilder;
@@ -217,13 +222,23 @@ public class UpgradeComponentsMojo extends AbstractMojo {
     private final List<ProjectRef> injectWithoutExclusionsRefs = new ArrayList<>();
 
     private void init() throws MojoExecutionException {
-        if (localRepository == null) {
-            localRepository = LOCAL_MAVEN_REPO;
+        if (StringUtils.isBlank(localRepositoryPath)) {
+            localRepositoryPath = LOCAL_MAVEN_REPO;
         }
 
-        channel = loadChannel();
+        final DefaultRepositorySystemSession repositorySystemSession = MavenRepositorySystemUtils.newSession();
+        final LocalRepository localRepository = new LocalRepository(localRepositoryPath);
+        final LocalRepositoryManager localRepoManager = repositorySystem.newLocalRepositoryManager(repositorySystemSession,
+                localRepository);
+        repositorySystemSession.setLocalRepositoryManager(localRepoManager);
+
+        initChannel();
+        if (!remoteRepositories.isEmpty()) {
+            channel = overrideRemoteRepositories(channel, remoteRepositories);
+        }
+
         channelSession = new ChannelSession(Collections.singletonList(channel),
-                new DefaultMavenVersionsResolverFactory(remoteRepositories, localRepository, disableTlsVerification));
+                new VersionResolverFactory(repositorySystem, repositorySystemSession));
 
         ignoreStreams.forEach(ga -> ignoredStreams.add(SimpleProjectRef.parse(ga)));
         ignoreModules.forEach(ga -> ignoredModules.add(SimpleProjectRef.parse(ga)));
@@ -294,16 +309,11 @@ public class UpgradeComponentsMojo extends AbstractMojo {
         List<String> overriddenProperties = performHardPropertyOverrides(manipulator);
         List<Dependency> overriddenDependencies = performHardDependencyOverrides(resolvedProjectDependencies, manipulator);
 
-        List<Pair<Dependency, MavenArtifact>> dependenciesToUpgrade = findDepenenciesToUpgrade(resolvedProjectDependencies);
-        for (Pair<Dependency, MavenArtifact> upgrade: dependenciesToUpgrade) {
-            MavenArtifact artifactToUpgrade = upgrade.getRight();
+        List<Pair<Dependency, String>> dependenciesToUpgrade = findDepenenciesToUpgrade(resolvedProjectDependencies);
+        for (Pair<Dependency, String> upgrade: dependenciesToUpgrade) {
+            String newVersion = upgrade.getRight();
             Dependency locatedDependency = upgrade.getLeft();
-            String newVersion = artifactToUpgrade.getVersion();
 
-            if (locatedDependency == null) {
-                ChannelPluginLogger.LOGGER.errorf("Couldn't locate dependency %s", artifactToUpgrade);
-                continue;
-            }
             if (overriddenDependencies.contains(locatedDependency)) {
                 // if there was a hard version override, the dependency is not processed again
                 continue;
@@ -369,32 +379,42 @@ public class UpgradeComponentsMojo extends AbstractMojo {
             }
         }
 
-        if (writeRecordedChannel) {
-            writeRecordedChannel(pmeProject);
-        }
     }
 
     /**
      * Injects all transitive dependencies that are present in channels into parent POM's dependencyManagement section.
-     *
+     * <p>
      * Call this method after all modules has been processed via the `processModule()` method.
      */
     private void injectTransitiveDependencies() throws DependencyGraphBuilderException, XMLStreamException {
         PomManipulator rootManipulator = manipulators.get(
                 Pair.of(mavenProject.getGroupId(), mavenProject.getArtifactId()));
         Collection<Artifact> undeclaredDependencies = collectUndeclaredDependencies();
+
         List<Artifact> dependenciesToInject = undeclaredDependencies.stream().sorted()
                 // filter only deps that have a stream defined in the channel
-                .filter(d -> channel.getStreams().stream().anyMatch(s -> s.getGroupId().equals(d.getGroupId())
-                        && s.getArtifactId().equals(d.getArtifactId())))
+                .filter(d -> {
+                    // this should verify if the artifact from the project dependency tree is modified by the channel
+                    try {
+                        String newVersion = channelSession.findLatestMavenArtifactVersion(d.getGroupId(), d.getArtifactId(),
+                                d.getType(), d.getClassifier(), d.getVersion());
+                        return !newVersion.equals(d.getVersion());
+                    } catch (UnresolvedMavenArtifactException e) {
+                        // no stream found -> no change
+                        return false;
+                    }
+                })
+
+                .filter(d -> !(ignoredStreams.contains(new SimpleProjectRef(d.getGroupId(), d.getArtifactId()))
+                        || ignoredStreams.contains(new SimpleProjectRef(d.getGroupId(), "*"))))
                 .collect(Collectors.toList());
         for (Artifact a : dependenciesToInject) {
             try {
-                MavenArtifact channelArtifact = channelSession.resolveMavenArtifact(a.getGroupId(), a.getArtifactId(),
+                String newVersion = channelSession.findLatestMavenArtifactVersion(a.getGroupId(), a.getArtifactId(),
                         a.getType(), a.getClassifier(), a.getVersion());
-                if (!channelArtifact.getVersion().equals(a.getVersion())) {
+                if (!newVersion.equals(a.getVersion())) {
                     ArtifactRef artifactRef = new SimpleArtifactRef(a.getGroupId(), a.getArtifactId(),
-                            channelArtifact.getVersion(), a.getType(), a.getClassifier());
+                            newVersion, a.getType(), a.getClassifier());
                     getLog().info(String.format("Injecting undeclared dependency: %s", a));
                     boolean allowTransitives = injectWithoutExclusionsRefs.contains(artifactRef.asProjectVersionRef())
                             || injectWithoutExclusionsRefs.contains(new SimpleProjectRef(a.getGroupId(), "*"));
@@ -493,12 +513,15 @@ public class UpgradeComponentsMojo extends AbstractMojo {
         return projectDependencies;
     }
 
-    private List<Pair<Dependency, MavenArtifact>> findDepenenciesToUpgrade(
+    private List<Pair<Dependency, String>> findDepenenciesToUpgrade(
             Map<ArtifactRef, Dependency> resolvedProjectDependencies) {
-        List<Pair<Dependency, MavenArtifact>> dependenciesToUpgrade = new ArrayList<>();
+        List<Pair<Dependency, String>> dependenciesToUpgrade = new ArrayList<>();
         for (Map.Entry<ArtifactRef, Dependency> entry : resolvedProjectDependencies.entrySet()) {
             ArtifactRef artifactRef = entry.getKey();
             Dependency dependency = entry.getValue();
+
+            Objects.requireNonNull(artifactRef);
+            Objects.requireNonNull(dependency);
 
             if (projectGavs.contains(artifactRef.asProjectVersionRef())) {
                 getLog().debug("Ignoring in-project dependency: "
@@ -506,6 +529,12 @@ public class UpgradeComponentsMojo extends AbstractMojo {
                 continue;
             }
             if (ignoredStreams.contains(artifactRef.asProjectRef())) {
+                getLog().info("Skipping dependency (ignored stream): "
+                        + artifactRef.asProjectVersionRef().toString());
+                continue;
+            }
+            ProjectRef wildCardIgnoredProjectRef = new SimpleProjectRef(artifactRef.getGroupId(), "*");
+            if (ignoredStreams.contains(wildCardIgnoredProjectRef)) {
                 getLog().info("Skipping dependency (ignored stream): "
                         + artifactRef.asProjectVersionRef().toString());
                 continue;
@@ -522,40 +551,61 @@ public class UpgradeComponentsMojo extends AbstractMojo {
 
 
             try {
-                MavenArtifact mavenArtifact = channelSession.resolveMavenArtifact(artifactRef.getGroupId(),
+                String channelVersion = channelSession.findLatestMavenArtifactVersion(artifactRef.getGroupId(),
                         artifactRef.getArtifactId(), artifactRef.getType(), artifactRef.getClassifier(),
                         artifactRef.getVersionString());
 
-                if (!mavenArtifact.getVersion().equals(artifactRef.getVersionString())) {
+                if (!channelVersion.equals(artifactRef.getVersionString())) {
                     getLog().info("Updating dependency " + artifactRef.getGroupId()
                             + ":" + artifactRef.getArtifactId() + ":" + artifactRef.getVersionString()
-                            + " to version " + mavenArtifact.getVersion());
+                            + " to version " + channelVersion);
                 }
-                dependenciesToUpgrade.add(Pair.of(dependency, mavenArtifact));
+                dependenciesToUpgrade.add(Pair.of(dependency, channelVersion));
             } catch (UnresolvedMavenArtifactException e) {
+                // this produces a lot of noise due to many of e.g. test artifacts not being managed by channels, so keep it
+                // at the debug level
                 getLog().debug("Can't resolve artifact: " + artifactRef, e);
             }
         }
         return dependenciesToUpgrade;
     }
 
-    private Channel loadChannel() throws MojoExecutionException {
+    private void initChannel() throws MojoExecutionException {
+        int numberOfSources = 0;
+        if (StringUtils.isNotBlank(channelFile)) numberOfSources++;
+        if (StringUtils.isNotBlank(channelGAV)) numberOfSources++;
+        if (StringUtils.isNotBlank(manifestFile)) numberOfSources++;
+        if (StringUtils.isNotBlank(manifestGAV)) numberOfSources++;
+        if (numberOfSources > 1) {
+            throw new MojoExecutionException("Exactly one of [channelFile, channelGAV, manifestFile, manifestGAV] has to be given.");
+        }
+
+        if ((StringUtils.isNotBlank(manifestFile) || StringUtils.isNotBlank(manifestGAV)) && remoteRepositories.isEmpty()) {
+            // throw new MojoExecutionException("The remoteRepositories property is mandatory when manifest is given.");
+        }
+
         try {
-            if (channelFile != null) {
+            if (StringUtils.isNotBlank(channelFile)) {
                 Path channelFilePath = Path.of(channelFile);
                 if (!channelFilePath.isAbsolute()) {
                     channelFilePath = Path.of(mavenSession.getExecutionRootDirectory()).resolve(channelFilePath);
                 }
                 getLog().info("Reading channel file " + channelFilePath);
-                return ChannelMapper.from(channelFilePath.toUri().toURL());
+                channel = ChannelMapper.from(channelFilePath.toUri().toURL());
             } else if (StringUtils.isNotBlank(channelGAV)) {
-                // download the maven artifact with the channel
-                return resolveChannel(channelGAV);
+                channel = resolveChannel(channelGAV);
+            } else if (StringUtils.isNotBlank(manifestFile)) {
+                URL manifestUrl = Path.of(manifestFile).toUri().toURL();
+                channel = new Channel("a-channel", null, null, null, new ChannelManifestCoordinate(manifestUrl), null, null);
+            } else if (StringUtils.isNotBlank(manifestGAV)) {
+                ProjectVersionRef gav = SimpleProjectVersionRef.parse(manifestGAV);
+                channel = new Channel("a-channel", null, null, null, new ChannelManifestCoordinate(gav.getGroupId(), gav.getArtifactId(), gav.getVersionString()), null,
+                        null);
             } else {
-                throw new MojoExecutionException("Either channelFile or channelGAV parameter needs to be set.");
+                throw new MojoExecutionException("No channel or manifest specified.");
             }
         } catch (MalformedURLException e) {
-            throw new MojoExecutionException("Could not read channelFile", e);
+            throw new MojoExecutionException("Can't parse the channel or manifest file path", e);
         } catch (ArtifactResolutionException e) {
             throw new MojoExecutionException("Failed to resolve the channel artifact", e);
         }
@@ -563,7 +613,7 @@ public class UpgradeComponentsMojo extends AbstractMojo {
 
     /**
      * Resolves channel file specified by a GAV.
-     *
+     * <p>
      * This searches in all remote repositories specified in the processed project and the settings.xml.
      */
     private Channel resolveChannel(String gavString) throws ArtifactResolutionException, MalformedURLException {
@@ -581,6 +631,34 @@ public class UpgradeComponentsMojo extends AbstractMojo {
         return ChannelMapper.from(channelFile.toURI().toURL());
     }
 
+    private final Channel overrideRemoteRepositories(Channel channel, List<String> repositories) {
+        return new Channel(channel.getName(), channel.getDescription(), channel.getVendor(), createRepositories(repositories),
+                channel.getManifestCoordinate(), channel.getBlocklistCoordinate(), channel.getNoStreamStrategy());
+    }
+
+    private final List<Repository> createRepositories(List<String> userRepositories) {
+        HashMap<String, Repository> result = new HashMap<>();
+        int idx = 0;
+        for (String input: userRepositories) {
+            String[] segments = input.split("::");
+            Repository previous;
+            String id;
+            if (segments.length == 1) {
+                id = "repo-" + idx++;
+                previous = result.put(id, new Repository(id, segments[0]));
+            } else if (segments.length == 2) {
+                id = segments[0];
+                previous = result.put(id, new Repository(id, segments[1]));
+            } else {
+                throw new IllegalArgumentException("Invalid remote repository entry: " + input);
+            }
+            if (previous != null) {
+                throw new IllegalArgumentException("Duplicate remote repository key: '" + id + "'");
+            }
+        }
+        return new ArrayList<>(result.values());
+    }
+
     /**
      * Returns PME representation of current project module and its submodules.
      */
@@ -588,25 +666,9 @@ public class UpgradeComponentsMojo extends AbstractMojo {
         return pomIO.parseProject(mavenProject.getModel().getPomFile());
     }
 
-    private void writeRecordedChannel(Project project) {
-        try {
-            Channel recordedChannel = channelSession.getRecordedChannel();
-            if (recordedChannel.getStreams().size() > 0) {
-                String recordedChannelYaml = ChannelMapper.toYaml(recordedChannel);
-                Path targetDir = Path.of(project.getPom().getParent(), "target");
-                if (!targetDir.toFile().exists()) {
-                    targetDir.toFile().mkdir();
-                }
-                Files.write(Path.of(targetDir.toString(), "recorded-channel.yaml"), recordedChannelYaml.getBytes());
-            }
-        } catch (IOException e) {
-            throw new RuntimeException("Couldn't write recorder channel", e);
-        }
-    }
-
     /**
      * Collects transitive dependencies from all project's modules.
-     *
+     * <p>
      * This has to be called after all submodules has been processed (so that all declared dependencies has been
      * collected).
      */
@@ -663,4 +725,5 @@ public class UpgradeComponentsMojo extends AbstractMojo {
             return Pair.of(pmeProject, propertyName);
         }
     }
+
 }

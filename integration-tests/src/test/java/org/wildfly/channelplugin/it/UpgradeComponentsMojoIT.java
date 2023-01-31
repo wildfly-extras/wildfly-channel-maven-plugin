@@ -4,7 +4,6 @@ import java.io.File;
 import java.net.MalformedURLException;
 import java.util.Optional;
 import java.util.logging.Logger;
-import java.util.stream.Collectors;
 
 import com.soebes.itf.jupiter.extension.MavenGoal;
 import com.soebes.itf.jupiter.extension.MavenJupiterExtension;
@@ -14,8 +13,8 @@ import com.soebes.itf.jupiter.extension.SystemProperty;
 import com.soebes.itf.jupiter.maven.MavenExecutionResult;
 import org.apache.maven.model.Dependency;
 import org.apache.maven.model.Model;
-import org.wildfly.channel.Channel;
-import org.wildfly.channel.ChannelMapper;
+import org.wildfly.channel.ChannelManifest;
+import org.wildfly.channel.ChannelManifestMapper;
 import org.wildfly.channel.Stream;
 import org.wildfly.channel.version.VersionMatcher;
 import org.wildfly.channelplugin.utils.DependencyModel;
@@ -35,11 +34,11 @@ public class UpgradeComponentsMojoIT {
      * Basic functionality check.
      */
     @MavenGoal("${project.groupId}:wildfly-channel-maven-plugin:${project.version}:upgrade")
-    @SystemProperty(value = "channelFile", content = "channel.yaml")
+    @SystemProperty(value = "manifestFile", content = "manifest.yaml")
     @SystemProperty(value = "localRepository", content = "${maven.repo.local}")
     @SystemProperty(value = "ignoreStreams", content = "org.jboss:ignored-dep")
     @MavenTest
-    void basic_project_test_case(MavenExecutionResult result) throws MalformedURLException {
+    void basic_project_test_case(MavenExecutionResult result) {
         assertThat(result).isSuccessful();
 
         Model model = result.getMavenProjectResult().getModel();
@@ -83,20 +82,6 @@ public class UpgradeComponentsMojoIT {
                     assertThat(o).isPresent();
                     assertThat(o.get().getVersion()).isEqualTo("1.0.0.Final");
                 });
-
-        // verify that effective channel file has been created
-        File effectiveChannelFile = new File(result.getMavenProjectResult().getTargetProjectDirectory(),
-                "target/recorded-channel.yaml");
-        assertThat(effectiveChannelFile).exists();
-        Channel effectiveChannel = ChannelMapper.from(effectiveChannelFile.toURI().toURL());
-        assertThat(effectiveChannel.getStreams().stream()
-                        .map(s -> s.getGroupId() + ":" + s.getArtifactId() + ":" + s.getVersion())
-                        .collect(Collectors.toList()))
-                .contains(
-                        "io.undertow:undertow-core:2.2.17.SP1-redhat-00001",
-                        "org.jboss.marshalling:jboss-marshalling:2.0.9.Final-redhat-00001",
-                        "commons-io:commons-io:2.10.1.redhat-00001"
-                );
     }
 
     /**
@@ -104,13 +89,13 @@ public class UpgradeComponentsMojoIT {
      * versions. It is verified that all BOM dependencies that are listed in the channel, are upgraded accordingly.
      */
     @MavenGoal("${project.groupId}:wildfly-channel-maven-plugin:${project.version}:upgrade")
-    @SystemProperty(value = "channelFile", content = "channel.yaml")
+    @SystemProperty(value = "manifestFile", content = "manifest.yaml")
     @MavenTest
     void eap_bom_test_case(MavenExecutionResult result) throws MalformedURLException {
         assertThat(result).isSuccessful();
 
-        File channelFile = new File(result.getMavenProjectResult().getTargetProjectDirectory(), "channel.yaml");
-        Channel channel = ChannelMapper.from(channelFile.toURI().toURL());
+        File manifestFile = new File(result.getMavenProjectResult().getTargetProjectDirectory(), "manifest.yaml");
+        ChannelManifest channel = ChannelManifestMapper.from(manifestFile.toURI().toURL());
         Model model = result.getMavenProjectResult().getModel();
 
         for (Dependency dependency : model.getDependencyManagement().getDependencies()) {
@@ -142,7 +127,7 @@ public class UpgradeComponentsMojoIT {
      * Test `overrideProperties` parameter.
      */
     @MavenGoal("${project.groupId}:wildfly-channel-maven-plugin:${project.version}:upgrade")
-    @SystemProperty(value = "channelFile", content = "channel.yaml")
+    @SystemProperty(value = "manifestFile", content = "manifest.yaml")
     @SystemProperty(value = "overrideProperties", content = "undertow.version=2.2.5.Final-Overridden")
     @MavenTest
     void override_property_test_case(MavenExecutionResult result) {
@@ -166,7 +151,7 @@ public class UpgradeComponentsMojoIT {
      * Test `overrideDependencies` parameter.
      */
     @MavenGoal("${project.groupId}:wildfly-channel-maven-plugin:${project.version}:upgrade")
-    @SystemProperty(value = "channelFile", content = "channel.yaml")
+    @SystemProperty(value = "manifestFile", content = "manifest.yaml")
     @SystemProperty(value = "overrideDependencies", content = "io.undertow:undertow-core:2.2.5.Final-Overridden")
     @MavenTest
     void override_dependency_test_case(MavenExecutionResult result) {

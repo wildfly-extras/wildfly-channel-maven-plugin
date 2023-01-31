@@ -17,12 +17,12 @@ public class ChannelBuilder {
     private static final String CHANNEL_CLASSIFIER = "channel";
     private static final String CHANNEL_EXTENSION = "yaml";
 
-    private final DefaultMavenVersionsResolverFactory resolverFactory;
+    private final MavenVersionsResolver resolver;
     private String inputGav;
     private File inputFile;
 
-    public ChannelBuilder(DefaultMavenVersionsResolverFactory resolverFactory) {
-        this.resolverFactory = resolverFactory;
+    public ChannelBuilder(MavenVersionsResolver resolver) {
+        this.resolver = resolver;
     }
 
     public ChannelBuilder setChannelGav(String inputGav) {
@@ -46,7 +46,6 @@ public class ChannelBuilder {
                 channelFile = inputFile;
             } else if (StringUtils.isNotBlank(inputGav)) {
                 ProjectVersionRef gav = SimpleProjectVersionRef.parse(inputGav);
-                MavenVersionsResolver resolver = resolverFactory.create();
                 channelFile = resolver.resolveArtifact(gav.getGroupId(), gav.getArtifactId(),
                         CHANNEL_EXTENSION, CHANNEL_CLASSIFIER, gav.getVersionString());
             } else {
