@@ -2,6 +2,7 @@ package org.wildfly.channelplugin.manipulation;
 
 import java.io.IOException;
 import java.io.Writer;
+import java.util.Collection;
 import java.util.List;
 import java.util.Stack;
 
@@ -64,7 +65,7 @@ public class PomManipulator {
         return PomHelper.setPropertyVersion(eventReader, null, propertyName, propertyValue);
     }
 
-    public void injectManagedDependency(ArtifactRef dependency, List<ProjectRef> exclusions) throws XMLStreamException {
+    public void injectManagedDependency(ArtifactRef dependency, Collection<ProjectRef> exclusions) throws XMLStreamException {
         injectManagedDependency(eventReader, dependency, exclusions);
     }
 
@@ -94,7 +95,7 @@ public class PomManipulator {
      * The dependencyManagement section must be already present in the POM.
      */
     static void injectManagedDependency(ModifiedPomXMLEventReader eventReader, ArtifactRef dependency,
-            List<ProjectRef> exclusions) throws XMLStreamException {
+            Collection<ProjectRef> exclusions) throws XMLStreamException {
         eventReader.rewind();
 
         Stack<String> stack = new Stack<String>();
@@ -121,7 +122,7 @@ public class PomManipulator {
         }
     }
 
-    private static String composeDependencyElementString(ArtifactRef artifact, List<ProjectRef> exclusions) {
+    private static String composeDependencyElementString(ArtifactRef artifact, Collection<ProjectRef> exclusions) {
         StringBuilder sb = new StringBuilder();
         sb.append("    <dependency>\n");
         sb.append(String.format("                <groupId>%s</groupId>\n", artifact.getGroupId()));
@@ -133,7 +134,7 @@ public class PomManipulator {
         if (!"jar".equals(artifact.getType())) {
             sb.append(String.format("                <type>%s</type>\n", artifact.getType()));
         }
-        if (!exclusions.isEmpty()) {
+        if (exclusions != null && !exclusions.isEmpty()) {
             sb.append("                <exclusions>\n");
             for (ProjectRef e: exclusions) {
                 sb.append("                    <exclusion>\n");

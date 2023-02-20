@@ -181,6 +181,17 @@ public class UpgradeComponentsMojo extends AbstractMojo {
     @Parameter(property = "injectTransitiveDependencies", defaultValue = "true")
     boolean injectTransitiveDependencies;
 
+    /**
+     * When injecting new dependency elements (to override transitive dependency versions), add exclussions according to given
+     * project submodule (given in G:A format).
+     * <p>
+     * Effectively, this means that when a transitive dependency G:A:V is going to be injected to override the dependency version,
+     * the plugin will try to find this same dependency in a dependency tree of a given submodule and copy exclusions it finds
+     * there to the injected dependency element.
+     */
+    @Parameter(property = "copyExclusionsFrom")
+    String copyExclusionsFrom;
+
     @Inject
     DependencyGraphBuilder dependencyGraphBuilder;
 
@@ -376,9 +387,9 @@ public class UpgradeComponentsMojo extends AbstractMojo {
         PomManipulator rootManipulator = manipulators.get(
                 Pair.of(mavenProject.getGroupId(), mavenProject.getArtifactId()));
         // (dependency => exclusions list) map of undeclared dependencies
-        Map<ArtifactRef, List<ProjectRef>> undeclaredDependencies = collectUndeclaredDependencies();
+        Map<ArtifactRef, Set<ProjectRef>> undeclaredDependencies = collectUndeclaredDependencies();
 
-        List<Map.Entry<ArtifactRef, List<ProjectRef>>> dependenciesToInject = undeclaredDependencies.entrySet().stream()
+        List<Map.Entry<ArtifactRef, Set<ProjectRef>>> dependenciesToInject = undeclaredDependencies.entrySet().stream()
                 .sorted((e1, e2) -> e1.getKey().compareTo(e2.getKey()))
                 // filter only deps that have a stream defined in the channel
                 .filter(entry -> {
@@ -399,7 +410,7 @@ public class UpgradeComponentsMojo extends AbstractMojo {
                         || ignoredStreams.contains(new SimpleProjectRef(a.getGroupId(), "*")));
                 })
                 .collect(Collectors.toList());
-        for (Map.Entry<ArtifactRef, List<ProjectRef>> entry : dependenciesToInject) {
+        for (Map.Entry<ArtifactRef, Set<ProjectRef>> entry : dependenciesToInject) {
             ArtifactRef a = entry.getKey();
             try {
                 String newVersion = channelSession.findLatestMavenArtifactVersion(a.getGroupId(), a.getArtifactId(),
@@ -657,15 +668,41 @@ public class UpgradeComponentsMojo extends AbstractMojo {
     }
 
     /**
-     * Collects transitive dependencies from all project's modules.
+     * Collects transitive dependencies from all project's modules, which are not declared in the project.
      * <p>
      * This has to be called after all submodules has been processed (so that all declared dependencies has been
      * collected).
      */
-    private Map<ArtifactRef, List<ProjectRef>> collectUndeclaredDependencies() throws DependencyGraphBuilderException {
+    private Map<ArtifactRef, Set<ProjectRef>> collectUndeclaredDependencies() throws DependencyGraphBuilderException {
+        Map<ArtifactRef, Set<ProjectRef>> artifactExclusions = new HashMap<>();
+
+        // First of all, if `copyExclusionsFrom` module has been set, we are going to remember exclusions from all dependencies
+        // of this module. These exclusions will be used for the newly injected dependency elements.
+        if (copyExclusionsFrom != null) {
+            ProjectRef exclusionsModule = SimpleProjectRef.parse(copyExclusionsFrom);
+            Optional<MavenProject> exclusionsProject = mavenProject.getCollectedProjects().stream()
+                    .filter(p -> exclusionsModule.getGroupId().equals(p.getGroupId())
+                             && exclusionsModule.getArtifactId().equals(p.getArtifactId()))
+                    .findFirst();
+            if (exclusionsProject.isPresent()) {
+                ProjectBuildingRequest buildingRequest = new DefaultProjectBuildingRequest(mavenSession.getProjectBuildingRequest());
+                buildingRequest.setProject(exclusionsProject.get());
+                DependencyNode rootNode = dependencyGraphBuilder.buildDependencyGraph(buildingRequest, null);
+                CollectingDependencyNodeVisitor visitor = new CollectingDependencyNodeVisitor();
+                rootNode.accept(visitor);
+                visitor.getNodes().forEach(node -> {
+                    HashSet<ProjectRef> exclusionSet = new HashSet<>(toProjectRefs(node.getExclusions()));
+                    Set<ProjectRef> previousExclusions = artifactExclusions.put(toArtifactRef(node.getArtifact()), exclusionSet);
+                    if (previousExclusions != null) {
+                        exclusionSet.addAll(previousExclusions);
+                    }
+                });
+            }
+        }
+
         // This performs a traversal of a dependency tree of all submodules in the project. All discovered dependencies
         // that are not directly declared in the project are considered transitive dependencies.
-        Map<ArtifactRef, List<ProjectRef>> undeclaredDependencies = new HashMap<>();
+        Map<ArtifactRef, Set<ProjectRef>> undeclaredDependencies = new HashMap<>();
         for (MavenProject module: mavenProject.getCollectedProjects()) {
             ProjectBuildingRequest buildingRequest =
                     new DefaultProjectBuildingRequest(mavenSession.getProjectBuildingRequest());
@@ -675,24 +712,19 @@ public class UpgradeComponentsMojo extends AbstractMojo {
             rootNode.accept(visitor);
             visitor.getNodes().forEach(node -> {
                 ArtifactRef artifact = toArtifactRef(node.getArtifact());
+                Set<ProjectRef> exclusions = artifactExclusions.get(artifact);
                 if (!declaredDependencies.contains(artifact.asProjectRef())) {
-                    List<ProjectRef> exclusions = toProjectRefs(node.getExclusions());
 
-                    /*if ("httpclient".equals(artifact.getArtifactId())) {
+                    if ("httpclient".equals(artifact.getArtifactId()) || "jboss-remoting".equals(artifact.getArtifactId())) {
                         getLog().warn(String.format("Found undeclared dependency %s:%s in module %s", artifact.getGroupId(),
                                 artifact.getArtifactId(), module.getArtifactId()));
-                        getLog().warn(String.format("  Exclusions:\n  %s",
-                                exclusions.stream().map(a -> a.getGroupId() + ":" + a.getArtifactId()).collect(Collectors.joining("\n  "))));
-                    }*/
-
-                    List<ProjectRef> previousExclusions = undeclaredDependencies.put(artifact, exclusions);
-                    if (previousExclusions != null) {
-                        for (ProjectRef previousExclusion: previousExclusions) {
-                            if (!exclusions.contains(previousExclusion)) {
-                                exclusions.add(previousExclusion);
-                            }
+                        if (exclusions != null) {
+                            getLog().warn(String.format("  Exclusions:\n  %s",
+                                    exclusions.stream().map(a -> a.getGroupId() + ":" + a.getArtifactId()).collect(Collectors.joining("\n  "))));
                         }
                     }
+
+                    undeclaredDependencies.put(artifact, exclusions);
                 }
             });
         }
