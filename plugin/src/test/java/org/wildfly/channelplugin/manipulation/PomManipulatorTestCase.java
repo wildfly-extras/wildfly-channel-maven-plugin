@@ -6,6 +6,7 @@ import java.net.URISyntaxException;
 import java.net.URL;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Collections;
 import java.util.List;
 
 import javax.xml.stream.XMLInputFactory;
@@ -48,7 +49,7 @@ public class PomManipulatorTestCase {
         Assertions.assertThat(model.getDependency(dep.getGroupId(), dep.getArtifactId(), dep.getType(), null))
                 .isEmpty();
 
-        PomManipulator.injectManagedDependency(eventReader, dep, true);
+        PomManipulator.injectManagedDependency(eventReader, dep, Collections.emptyList());
 
         model = readDependencyModel();
         Assertions.assertThat(model.getDependency(dep.getGroupId(), dep.getArtifactId(), dep.getType(), null))

@@ -2,6 +2,7 @@ package org.wildfly.channelplugin.manipulation;
 
 import java.io.IOException;
 import java.io.Writer;
+import java.util.List;
 import java.util.Stack;
 
 import javax.xml.stream.XMLInputFactory;
@@ -15,6 +16,7 @@ import org.codehaus.plexus.util.IOUtil;
 import org.codehaus.plexus.util.WriterFactory;
 import org.codehaus.stax2.XMLInputFactory2;
 import org.commonjava.maven.atlas.ident.ref.ArtifactRef;
+import org.commonjava.maven.atlas.ident.ref.ProjectRef;
 import org.commonjava.maven.ext.common.model.Project;
 
 /**
@@ -62,8 +64,8 @@ public class PomManipulator {
         return PomHelper.setPropertyVersion(eventReader, null, propertyName, propertyValue);
     }
 
-    public void injectManagedDependency(ArtifactRef dependency, boolean allowTransitives) throws XMLStreamException {
-        injectManagedDependency(eventReader, dependency, allowTransitives);
+    public void injectManagedDependency(ArtifactRef dependency, List<ProjectRef> exclusions) throws XMLStreamException {
+        injectManagedDependency(eventReader, dependency, exclusions);
     }
 
     /**
@@ -92,7 +94,7 @@ public class PomManipulator {
      * The dependencyManagement section must be already present in the POM.
      */
     static void injectManagedDependency(ModifiedPomXMLEventReader eventReader, ArtifactRef dependency,
-            boolean allowTransitives) throws XMLStreamException {
+            List<ProjectRef> exclusions) throws XMLStreamException {
         eventReader.rewind();
 
         Stack<String> stack = new Stack<String>();
@@ -107,7 +109,7 @@ public class PomManipulator {
                 if (event.asEndElement().getName().getLocalPart().equals(DEPENDENCIES)
                         && path.equals(DEPENDENCY_MANAGEMENT_PATH)) {
                     eventReader.mark(0);
-                    eventReader.replaceMark(0, composeDependencyElementString(dependency, allowTransitives)
+                    eventReader.replaceMark(0, composeDependencyElementString(dependency, exclusions)
                                     + "        </dependencies>"
                     );
                     eventReader.clearMark(0);
@@ -119,7 +121,7 @@ public class PomManipulator {
         }
     }
 
-    private static String composeDependencyElementString(ArtifactRef artifact, boolean allowTransitives) {
+    private static String composeDependencyElementString(ArtifactRef artifact, List<ProjectRef> exclusions) {
         StringBuilder sb = new StringBuilder();
         sb.append("    <dependency>\n");
         sb.append(String.format("                <groupId>%s</groupId>\n", artifact.getGroupId()));
@@ -131,12 +133,14 @@ public class PomManipulator {
         if (!"jar".equals(artifact.getType())) {
             sb.append(String.format("                <type>%s</type>\n", artifact.getType()));
         }
-        if (!allowTransitives) {
+        if (!exclusions.isEmpty()) {
             sb.append("                <exclusions>\n");
-            sb.append("                    <exclusion>\n");
-            sb.append("                        <groupId>*</groupId>\n");
-            sb.append("                        <artifactId>*</artifactId>\n");
-            sb.append("                    </exclusion>\n");
+            for (ProjectRef e: exclusions) {
+                sb.append("                    <exclusion>\n");
+                sb.append("                        <groupId>" + e.getGroupId() + "</groupId>\n");
+                sb.append("                        <artifactId>" + e.getArtifactId() + "</artifactId>\n");
+                sb.append("                    </exclusion>\n");
+            }
             sb.append("                </exclusions>\n");
         }
         sb.append("            </dependency>\n");
