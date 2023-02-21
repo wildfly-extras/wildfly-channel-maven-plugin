@@ -605,6 +605,12 @@ public class UpgradeComponentsMojo extends AbstractMojo {
             } else {
                 throw new MojoExecutionException("No channel or manifest specified.");
             }
+
+            if (channel.getManifestCoordinate() == null
+                    || (channel.getManifestCoordinate().getUrl() == null
+                    && channel.getManifestCoordinate().getMaven() == null)) {
+                throw new MojoExecutionException("The channel you provided doesn't reference any manifest. Did you point to the correct file? Use `-DmanifestFile` or `-DmanifestGAV` to reference a manifest, alternatively use `-DchannelFile` or `-DchannelGAV` to reference a channel.");
+            }
         } catch (MalformedURLException e) {
             throw new MojoExecutionException("Can't parse the channel or manifest file path", e);
         } catch (ArtifactResolutionException e) {
@@ -714,16 +720,6 @@ public class UpgradeComponentsMojo extends AbstractMojo {
                 ArtifactRef artifact = toArtifactRef(node.getArtifact());
                 Set<ProjectRef> exclusions = artifactExclusions.get(artifact);
                 if (!declaredDependencies.contains(artifact.asProjectRef())) {
-
-                    if ("httpclient".equals(artifact.getArtifactId()) || "jboss-remoting".equals(artifact.getArtifactId())) {
-                        getLog().warn(String.format("Found undeclared dependency %s:%s in module %s", artifact.getGroupId(),
-                                artifact.getArtifactId(), module.getArtifactId()));
-                        if (exclusions != null) {
-                            getLog().warn(String.format("  Exclusions:\n  %s",
-                                    exclusions.stream().map(a -> a.getGroupId() + ":" + a.getArtifactId()).collect(Collectors.joining("\n  "))));
-                        }
-                    }
-
                     undeclaredDependencies.put(artifact, exclusions);
                 }
             });

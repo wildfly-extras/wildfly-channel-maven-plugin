@@ -1,7 +1,6 @@
 package org.wildfly.channeltools.util;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 
 import org.apache.maven.artifact.Artifact;
@@ -28,7 +27,7 @@ public final class ConversionUtils {
 
     public static List<ProjectRef> toProjectRefs(List<Exclusion> exclusions) {
         if (exclusions == null) {
-            return Collections.emptyList();
+            return new ArrayList<>();
         }
 
         ArrayList<ProjectRef> refs = new ArrayList<>();
