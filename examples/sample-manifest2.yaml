@@ -1,0 +1,18 @@
+---
+schemaVersion: "1.0.0"
+streams:
+  - groupId: "com.carrotsearch"
+    artifactId: "hppc"
+    version: "0.8.1.redhat-00001"
+  - groupId: "com.fasterxml"
+    artifactId: "classmate"
+    version: "1.5.1.redhat-00001"
+  - groupId: "com.fasterxml.jackson.core"
+    artifactId: "jackson-databind"
+    version: "2.13.4-thofman-00001"
+  - groupId: "org.apache.httpcomponents"
+    artifactId: "httpclient"
+    version: "4.5.14"
+  - groupId: "org.jboss.remoting"
+    artifactId: "jboss-remoting"
+    version: "5.0.27.Final-redhat-00001"

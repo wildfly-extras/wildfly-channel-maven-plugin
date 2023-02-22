@@ -422,7 +422,8 @@ public class UpgradeComponentsMojo extends AbstractMojo {
                 if (!newVersion.equals(a.getVersionString())) {
                     SimpleArtifactRef newDependency = new SimpleArtifactRef(a.getGroupId(), a.getArtifactId(), newVersion,
                             a.getType(), a.getClassifier());
-                    getLog().info(String.format("Injecting undeclared dependency: %s", newDependency));
+                    getLog().info(String.format("Injecting undeclared dependency: %s (original version was %s)", newDependency,
+                            a.getVersionString()));
                     rootManipulator.injectManagedDependency(newDependency, entry.getValue());
                 }
             } catch (UnresolvedMavenArtifactException e) {
