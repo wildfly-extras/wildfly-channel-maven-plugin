@@ -5,6 +5,7 @@ import java.net.MalformedURLException;
 import java.net.URL;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -188,6 +189,9 @@ public class UpgradeComponentsMojo extends AbstractMojo {
      * Effectively, this means that when a transitive dependency G:A:V is going to be injected to override the dependency version,
      * the plugin will try to find this same dependency in a dependency tree of a given submodule and copy exclusions it finds
      * there to the injected dependency element.
+     * <p>
+     * If this parameter is unset, the dependency exclusions are taken from managed dependencies section of the root module
+     * effective POM.
      */
     @Parameter(property = "copyExclusionsFrom")
     String copyExclusionsFrom;
@@ -387,9 +391,9 @@ public class UpgradeComponentsMojo extends AbstractMojo {
         PomManipulator rootManipulator = manipulators.get(
                 Pair.of(mavenProject.getGroupId(), mavenProject.getArtifactId()));
         // (dependency => exclusions list) map of undeclared dependencies
-        Map<ArtifactRef, Set<ProjectRef>> undeclaredDependencies = collectUndeclaredDependencies();
+        Map<ArtifactRef, Collection<ProjectRef>> undeclaredDependencies = collectUndeclaredDependencies();
 
-        List<Map.Entry<ArtifactRef, Set<ProjectRef>>> dependenciesToInject = undeclaredDependencies.entrySet().stream()
+        List<Map.Entry<ArtifactRef, Collection<ProjectRef>>> dependenciesToInject = undeclaredDependencies.entrySet().stream()
                 .sorted((e1, e2) -> e1.getKey().compareTo(e2.getKey()))
                 // filter only deps that have a stream defined in the channel
                 .filter(entry -> {
@@ -410,7 +414,7 @@ public class UpgradeComponentsMojo extends AbstractMojo {
                         || ignoredStreams.contains(new SimpleProjectRef(a.getGroupId(), "*")));
                 })
                 .collect(Collectors.toList());
-        for (Map.Entry<ArtifactRef, Set<ProjectRef>> entry : dependenciesToInject) {
+        for (Map.Entry<ArtifactRef, Collection<ProjectRef>> entry : dependenciesToInject) {
             ArtifactRef a = entry.getKey();
             try {
                 String newVersion = channelSession.findLatestMavenArtifactVersion(a.getGroupId(), a.getArtifactId(),
@@ -678,13 +682,19 @@ public class UpgradeComponentsMojo extends AbstractMojo {
      * <p>
      * This has to be called after all submodules has been processed (so that all declared dependencies has been
      * collected).
+     *
+     * @return a map containing a dependencies as keys and list of exclusions as values.
      */
-    private Map<ArtifactRef, Set<ProjectRef>> collectUndeclaredDependencies() throws DependencyGraphBuilderException {
-        Map<ArtifactRef, Set<ProjectRef>> artifactExclusions = new HashMap<>();
+    private Map<ArtifactRef, Collection<ProjectRef>> collectUndeclaredDependencies() throws DependencyGraphBuilderException {
+        Map<ArtifactRef, Collection<ProjectRef>> artifactExclusions = new HashMap<>();
 
         // First of all, if `copyExclusionsFrom` module has been set, we are going to remember exclusions from all dependencies
         // of this module. These exclusions will be used for the newly injected dependency elements.
+
+        // First of all, we want to collect information about exclusions for the dependencies that are eventually going to be
+        // injected into the project. There are two possible strategies:
         if (copyExclusionsFrom != null) {
+            // Either collect the exclusions from a dependency tree of a project submodule that a user specified.
             ProjectRef exclusionsModule = SimpleProjectRef.parse(copyExclusionsFrom);
             Optional<MavenProject> exclusionsProject = mavenProject.getCollectedProjects().stream()
                     .filter(p -> exclusionsModule.getGroupId().equals(p.getGroupId())
@@ -698,17 +708,21 @@ public class UpgradeComponentsMojo extends AbstractMojo {
                 rootNode.accept(visitor);
                 visitor.getNodes().forEach(node -> {
                     HashSet<ProjectRef> exclusionSet = new HashSet<>(toProjectRefs(node.getExclusions()));
-                    Set<ProjectRef> previousExclusions = artifactExclusions.put(toArtifactRef(node.getArtifact()), exclusionSet);
+                    Collection<ProjectRef> previousExclusions = artifactExclusions.put(toArtifactRef(node.getArtifact()), exclusionSet);
                     if (previousExclusions != null) {
                         exclusionSet.addAll(previousExclusions);
                     }
                 });
             }
+        } else {
+            // Or else collect the exclusions from a dependency management section of an effective POM of the root module.
+            List<Dependency> managedDependencies = mavenProject.getModel().getDependencyManagement().getDependencies();
+            managedDependencies.forEach(d -> artifactExclusions.put(toArtifactRef(d), toProjectRefs(d.getExclusions())));
         }
 
         // This performs a traversal of a dependency tree of all submodules in the project. All discovered dependencies
         // that are not directly declared in the project are considered transitive dependencies.
-        Map<ArtifactRef, Set<ProjectRef>> undeclaredDependencies = new HashMap<>();
+        Map<ArtifactRef, Collection<ProjectRef>> undeclaredDependencies = new HashMap<>();
         for (MavenProject module: mavenProject.getCollectedProjects()) {
             ProjectBuildingRequest buildingRequest =
                     new DefaultProjectBuildingRequest(mavenSession.getProjectBuildingRequest());
@@ -718,7 +732,7 @@ public class UpgradeComponentsMojo extends AbstractMojo {
             rootNode.accept(visitor);
             visitor.getNodes().forEach(node -> {
                 ArtifactRef artifact = toArtifactRef(node.getArtifact());
-                Set<ProjectRef> exclusions = artifactExclusions.get(artifact);
+                Collection<ProjectRef> exclusions = artifactExclusions.get(artifact);
                 if (!declaredDependencies.contains(artifact.asProjectRef())) {
                     undeclaredDependencies.put(artifact, exclusions);
                 }
