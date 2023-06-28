@@ -3,7 +3,6 @@ package org.wildfly.channelplugin.manipulation;
 import java.io.IOException;
 import java.io.Writer;
 import java.util.Collection;
-import java.util.List;
 import java.util.Stack;
 
 import javax.xml.stream.XMLInputFactory;
@@ -26,7 +25,9 @@ import org.commonjava.maven.ext.common.model.Project;
 public class PomManipulator {
 
     private static final String DEPENDENCY_MANAGEMENT_PATH = "/project/dependencyManagement/dependencies";
+    private static final String REPOSITORIES_PATH = "/project/repositories";
     private static final String DEPENDENCIES = "dependencies";
+    private static final String REPOSITORIES = "repositories";
 
     private final Project project;
     private final ModifiedPomXMLEventReader eventReader;
@@ -35,9 +36,6 @@ public class PomManipulator {
 
     /**
      * @param project Project instance
-     * @param executionRootDirectory the execution directory path (the top level module)
-     * @param produceEffectiveChannel upon writing the pom, should the manipulator also produce and effective channel
-     *                               file?
      */
     public PomManipulator(Project project) {
         try {
@@ -67,6 +65,34 @@ public class PomManipulator {
 
     public void injectManagedDependency(ArtifactRef dependency, Collection<ProjectRef> exclusions) throws XMLStreamException {
         injectManagedDependency(eventReader, dependency, exclusions);
+    }
+
+    public void injectRepository(String id, String url) throws XMLStreamException {
+        eventReader.rewind();
+
+        Stack<String> stack = new Stack<String>();
+        String path = "";
+
+        while (eventReader.hasNext()) {
+            XMLEvent event = eventReader.nextEvent();
+            if (event.isStartElement()) {
+                stack.push(path);
+                path = path + "/" + event.asStartElement().getName().getLocalPart();
+            } else if (event.isEndElement()) {
+                // replaces "</repositories>" end element with new repository + the end element
+                String elementName = event.asEndElement().getName().getLocalPart();
+                if (elementName.equals(REPOSITORIES) && path.equals(REPOSITORIES_PATH)) {
+                    eventReader.mark(0);
+                    eventReader.replaceMark(0, composeRepositoryElementString(id, url)
+                            + "    </repositories>"
+                    );
+                    eventReader.clearMark(0);
+                    break;
+                }
+
+                path = stack.pop();
+            }
+        }
     }
 
     /**
@@ -145,6 +171,24 @@ public class PomManipulator {
             sb.append("                </exclusions>\n");
         }
         sb.append("            </dependency>\n");
+        return sb.toString();
+    }
+
+
+    private static String composeRepositoryElementString(String id, String url) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("    <repository>\n");
+        sb.append(String.format("            <id>%s</id>\n", id));
+        sb.append(String.format("            <url>%s</url>\n", url));
+        sb.append("            <releases>\n");
+        sb.append("                <enabled>true</enabled>\n");
+        sb.append("                <updatePolicy>always</updatePolicy>\n");
+        sb.append("            </releases>\n");
+        sb.append("            <snapshots>\n");
+        sb.append("                <enabled>false</enabled>\n");
+        sb.append("                <updatePolicy>never</updatePolicy>\n");
+        sb.append("            </snapshots>\n");
+        sb.append("        </repository>\n");
         return sb.toString();
     }
 
