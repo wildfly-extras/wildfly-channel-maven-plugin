@@ -16,11 +16,20 @@ The plugin is not able to align dependencies when:
 * A dependency is inherited from a parent `pom.xml` which is not part of the target project structure.
 * A dependency version property is inherited from a parent `pom.xml` which is not part of the target project structure.
 
-### Goals
+## Goals
 
-* `upgrade`: Overrides dependencies versions in a project according to given Wildfly Channel file.
+* [`upgrade`](#upgrade)
+* [`inject-repositories`](#inject-repositories)
 
-### Configuration Parameters
+### `upgrade`
+
+Overrides dependencies versions in a project according to given Wildfly Channel file.
+
+Example:
+
+`mvn org.wildfly:wildfly-channel-maven-plugin:upgrade -DmanifestFile=manifest.yaml`
+
+#### Parameters
 
 * `channelFile`: Path to a Wildfly Channel file on a local filesystem.
 * `channelGAV`: Alternative to above, the channel file would be obtained from a maven repo.
@@ -50,6 +59,19 @@ The plugin is not able to align dependencies when:
   is to allow overriding transitive dependencies. If we wanted to have this, the final implementation should take 
   the real dependency tree into account, when figuring out which dependencies to inject.
 -->
+
+### `inject-repositories`
+
+Extracts repositories from given channel file, and adds these repositories to the project POM. The project build should
+then have access to all the repositories that the channel file references. 
+
+Example:
+
+`mvn org.wildfly:wildfly-channel-maven-plugin:inject-repositories -DfromChannelFile=channel.yaml`
+
+#### Parameters
+
+* `fromChannelFile`: Channel file to extract repositories from.
 
 ## Usage Examples
 
