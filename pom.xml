@@ -16,11 +16,18 @@
     <name>Wildfly Channel Tools - Root Project</name>
 
     <scm>
-        <connection>scm:git:git@github.com:TomasHofman/wildfly-channel-maven-plugin.git</connection>
-        <developerConnection>scm:git:git@github.com:TomasHofman/wildfly-channel-maven-plugin.git</developerConnection>
-        <url>https://github.com/TomasHofman/wildfly-channel-maven-plugin</url>
+        <connection>scm:git:git@github.com:wildfly-extras/wildfly-channel-maven-plugin.git</connection>
+        <developerConnection>scm:git:git@github.com:wildfly-extras/wildfly-channel-maven-plugin.git</developerConnection>
+        <url>https://github.com/wildfly-extras/wildfly-channel-maven-plugin</url>
         <tag>HEAD</tag>
     </scm>
+    <distributionManagement>
+        <repository>
+            <id>jboss-releases-repository</id>
+            <name>JBoss Releases Repository</name>
+            <url>https://repository.jboss.org/nexus/service/local/staging/deploy/maven2/</url>
+        </repository>
+    </distributionManagement>
 
     <modules>
         <module>plugin</module>
@@ -233,7 +240,7 @@
                     <autoVersionSubmodules>true</autoVersionSubmodules>
                     <tagNameFormat>@{project.version}</tagNameFormat>
                     <preparationGoals>verify</preparationGoals>
-                    <pushChanges>true</pushChanges>
+                    <pushChanges>false</pushChanges>
                     <localCheckout>true</localCheckout>
                     <remoteTagging>true</remoteTagging>
                     <arguments>-DskipTests ${release.arguments}</arguments>
