@@ -1,6 +1,7 @@
 package org.wildfly.channelplugin;
 
 import java.io.File;
+import java.io.IOException;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.nio.file.Path;
@@ -128,27 +129,27 @@ public class UpgradeComponentsMojo extends AbstractMojo {
     /**
      * Comma separated list of dependency G:As that should not be upgraded.
      */
-    @Parameter(property = "ignoreStreams", defaultValue = "")
+    @Parameter(property = "ignoreStreams")
     List<String> ignoreStreams;
 
     /**
      * Comma separated list of module G:As that should not be processed.
      */
-    @Parameter(property = "ignoreModules", defaultValue = "")
+    @Parameter(property = "ignoreModules")
     List<String> ignoreModules;
 
     /**
      * Comma separated list of property names. Project properties that match one of these names will not get
      * overridden.
      */
-    @Parameter(property = "ignoreProperties", defaultValue = "")
+    @Parameter(property = "ignoreProperties")
     List<String> ignoreProperties;
 
     /**
      * Comma separated list of property names prefixes. Project properties that match one of these prefixes will not get
      * overridden.
      */
-    @Parameter(property = "ignorePropertiesPrefixedWith", defaultValue = "")
+    @Parameter(property = "ignorePropertiesPrefixedWith")
     List<String> ignorePropertiesPrefixedWith;
 
     /**
@@ -223,6 +224,9 @@ public class UpgradeComponentsMojo extends AbstractMojo {
     private final HashMap<Pair<Project, String>, String> upgradedProperties = new HashMap<>();
     private final Set<ProjectRef> declaredDependencies = new HashSet<>();
 
+    /**
+     * This includes pre-processing of input parameters.
+     */
     private void init() throws MojoExecutionException {
         if (StringUtils.isBlank(localRepositoryPath)) {
             localRepositoryPath = LOCAL_MAVEN_REPO;
@@ -246,6 +250,20 @@ public class UpgradeComponentsMojo extends AbstractMojo {
         ignoreModules.forEach(ga -> ignoredModules.add(SimpleProjectRef.parse(ga)));
     }
 
+    /**
+     * This updates the configuration according to a config file living in the project root. Should be called before the
+     * {@link #init()} method.
+     */
+    private void reconfigure() throws MojoExecutionException {
+        File configFile = new File(mavenSession.getExecutionRootDirectory(), MojoConfigurator.DEFAULT_CONFIGURATION_FILE);
+        try {
+            MojoConfigurator configurator = new MojoConfigurator(configFile);
+            configurator.configureProperties(this);
+        } catch (IOException e) {
+            throw new MojoExecutionException("Unable to read plugin configuration from " + MojoConfigurator.DEFAULT_CONFIGURATION_FILE, e);
+        }
+    }
+
     @Override
     public void execute() throws MojoExecutionException {
         if (!mavenSession.getCurrentProject().isExecutionRoot()) {
@@ -253,6 +271,7 @@ public class UpgradeComponentsMojo extends AbstractMojo {
             return;
         }
 
+        reconfigure();
         init();
 
         try {
