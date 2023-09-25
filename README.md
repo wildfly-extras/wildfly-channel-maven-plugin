@@ -73,6 +73,36 @@ Example:
 
 * `fromChannelFile`: Channel file to extract repositories from.
 
+## Static Configuration
+
+Configuration parameters can be stored in a file `.wildfly-channel-maven-plugin` located in the root of the project 
+that's being processed. The file should be formatted so that single configuration parameter is put on a line. The
+parameters are then going to be combined with command line provided parameters. 
+
+For instance, to simplify a plugin call like this:
+
+```shell
+mvn org.wildfly:wildfly-channel-maven-plugin:upgrade \
+  -DmanifestFile=path/to/manifest.yaml \
+  -DignoreModules=groupId:artifactId \
+  -DignoreProperties=property1,property2
+```
+
+you can create the `.wildfly-channel-maven-plugin` file in your project with following content:
+
+```shell
+-DmanifestFile=path/to/manifest.yaml
+-DignoreModules=groupId:artifactId
+```
+
+and then just call the following command to achieve the same result as the original command:
+
+
+```shell
+mvn org.wildfly:wildfly-channel-maven-plugin:upgrade \
+  -DmanifestFile=path/to/manifest.yaml
+```
+
 ## Usage Examples
 
 (See additional examples, including sample files, in the [examples](examples/README.md) directory.)
