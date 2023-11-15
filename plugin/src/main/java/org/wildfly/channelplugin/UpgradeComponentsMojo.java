@@ -61,6 +61,7 @@ import org.wildfly.channel.ChannelMapper;
 import org.wildfly.channel.ChannelSession;
 import org.wildfly.channel.Repository;
 import org.wildfly.channel.UnresolvedMavenArtifactException;
+import org.wildfly.channel.VersionResult;
 import org.wildfly.channel.maven.VersionResolverFactory;
 import org.wildfly.channelplugin.manipulation.PomManipulator;
 import org.wildfly.channeltools.util.VersionUtils;
@@ -329,7 +330,7 @@ public class UpgradeComponentsMojo extends AbstractMojo {
         List<String> overriddenProperties = performHardPropertyOverrides(manipulator);
         List<Dependency> overriddenDependencies = performHardDependencyOverrides(resolvedProjectDependencies, manipulator);
 
-        List<Pair<Dependency, String>> dependenciesToUpgrade = findDepenenciesToUpgrade(resolvedProjectDependencies);
+        List<Pair<Dependency, String>> dependenciesToUpgrade = findDependenciesToUpgrade(resolvedProjectDependencies);
         for (Pair<Dependency, String> upgrade: dependenciesToUpgrade) {
             String newVersion = upgrade.getRight();
             Dependency locatedDependency = upgrade.getLeft();
@@ -419,9 +420,9 @@ public class UpgradeComponentsMojo extends AbstractMojo {
                     // verify if the artifact from the project dependency tree is modified by the channel
                     ArtifactRef a = entry.getKey();
                     try {
-                        String newVersion = channelSession.findLatestMavenArtifactVersion(a.getGroupId(), a.getArtifactId(),
+                        VersionResult versionResult = channelSession.findLatestMavenArtifactVersion(a.getGroupId(), a.getArtifactId(),
                                 a.getType(), a.getClassifier(), a.getVersionString());
-                        return !newVersion.equals(a.getVersionString());
+                        return !versionResult.getVersion().equals(a.getVersionString());
                     } catch (UnresolvedMavenArtifactException e) {
                         // no stream found -> no change
                         return false;
@@ -436,8 +437,9 @@ public class UpgradeComponentsMojo extends AbstractMojo {
         for (Map.Entry<ArtifactRef, Collection<ProjectRef>> entry : dependenciesToInject) {
             ArtifactRef a = entry.getKey();
             try {
-                String newVersion = channelSession.findLatestMavenArtifactVersion(a.getGroupId(), a.getArtifactId(),
+                VersionResult versionResult = channelSession.findLatestMavenArtifactVersion(a.getGroupId(), a.getArtifactId(),
                         a.getType(), a.getClassifier(), a.getVersionString());
+                String newVersion = versionResult.getVersion();
                 if (!newVersion.equals(a.getVersionString())) {
                     SimpleArtifactRef newDependency = new SimpleArtifactRef(a.getGroupId(), a.getArtifactId(), newVersion,
                             a.getType(), a.getClassifier());
@@ -531,14 +533,14 @@ public class UpgradeComponentsMojo extends AbstractMojo {
         projectDependencies.putAll(pmeProject.getResolvedManagedDependencies(manipulationSession));
         projectDependencies.putAll(pmeProject.getResolvedDependencies(manipulationSession));
 
-        if (projectDependencies.size() == 0) {
+        if (projectDependencies.isEmpty()) {
             getLog().debug("No dependencies found in " + pmeProject.getArtifactId());
         }
 
         return projectDependencies;
     }
 
-    private List<Pair<Dependency, String>> findDepenenciesToUpgrade(
+    private List<Pair<Dependency, String>> findDependenciesToUpgrade(
             Map<ArtifactRef, Dependency> resolvedProjectDependencies) {
         List<Pair<Dependency, String>> dependenciesToUpgrade = new ArrayList<>();
         for (Map.Entry<ArtifactRef, Dependency> entry : resolvedProjectDependencies.entrySet()) {
@@ -576,9 +578,10 @@ public class UpgradeComponentsMojo extends AbstractMojo {
 
 
             try {
-                String channelVersion = channelSession.findLatestMavenArtifactVersion(artifactRef.getGroupId(),
+                VersionResult versionResult = channelSession.findLatestMavenArtifactVersion(artifactRef.getGroupId(),
                         artifactRef.getArtifactId(), artifactRef.getType(), artifactRef.getClassifier(),
                         artifactRef.getVersionString());
+                String channelVersion = versionResult.getVersion();
 
                 if (!channelVersion.equals(artifactRef.getVersionString())) {
                     getLog().info("Updating dependency " + artifactRef.getGroupId()
