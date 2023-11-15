@@ -139,3 +139,27 @@ mvn org.wildfly:wildfly-channel-maven-plugin:upgrade \
    -DignorePropertiesPrefixedWith=legacy. \
    -DignoreModules=project.group:submodule1
 ```
+
+## Developing This Plugin
+
+### Debugging Integration Tests
+
+The [maven-it-extension](https://github.com/khmarbaise/maven-it-extension) is used for integration testing of this maven
+plugin.
+
+Set the `ITF_DEBUG` system property to remotely debug integration tests, e.g.:
+
+```shell
+mvn verify -f integration-tests/ -DITF_DEBUG
+```
+
+Then connect to the 8000 port after you see the "Running x.y.z.TestName" message:
+
+```shell
+
+[INFO] -------------------------------------------------------
+[INFO]  T E S T S
+[INFO] -------------------------------------------------------
+[INFO] Running org.wildfly.channelplugin.it.UpgradeComponentsMojoIT
+# Now connect with a debugger.
+```
