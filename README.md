@@ -91,8 +91,8 @@ mvn org.wildfly:wildfly-channel-maven-plugin:upgrade \
 you can create the `.wildfly-channel-maven-plugin` file in your project with following content:
 
 ```shell
--DmanifestFile=path/to/manifest.yaml
 -DignoreModules=groupId:artifactId
+-DignoreProperties=property1,property2
 ```
 
 and then just call the following command to achieve the same result as the original command:
