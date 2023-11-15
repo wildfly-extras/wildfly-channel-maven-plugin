@@ -1,7 +1,7 @@
 package org.wildfly.channelplugin.it;
 
-import java.io.File;
 import java.net.MalformedURLException;
+import java.nio.file.Path;
 import java.util.Optional;
 import java.util.logging.Logger;
 
@@ -23,7 +23,6 @@ import org.wildfly.channeltools.util.VersionUtils;
 import static com.soebes.itf.extension.assertj.MavenExecutionResultAssert.assertThat;
 import static org.assertj.core.api.Assertions.assertThat;
 
-@SuppressWarnings("OptionalGetWithoutIsPresent")
 @MavenJupiterExtension
 @MavenPredefinedRepository("maven-repo")
 public class UpgradeComponentsMojoIT {
@@ -52,26 +51,26 @@ public class UpgradeComponentsMojoIT {
         // verify dependency versions are still set to properties
         assertThat(dependencyModel.getDependency("io.undertow", "undertow-core", "jar", null))
                 .satisfies(o -> {
-                    assertThat(o.isPresent());
+                    assertThat(o).isPresent();
                     assertThat(o.get().getVersion()).isEqualTo("${undertow.version}");
                 });
         assertThat(dependencyModel.getDependency("io.undertow", "undertow-servlet", "jar", null))
                 .satisfies(o -> {
-                    assertThat(o.isPresent());
+                    assertThat(o).isPresent();
                     assertThat(o.get().getVersion()).isEqualTo("${undertow.version}");
                 });
 
         // verify dependency version has been overriden
         assertThat(dependencyModel.getDependency("org.jboss.marshalling", "jboss-marshalling", "jar", null))
                 .satisfies(o -> {
-                    assertThat(o.isPresent());
+                    assertThat(o).isPresent();
                     assertThat(o.get().getVersion()).isEqualTo("2.0.9.Final-redhat-00001");
                 });
 
         // verify version specified by recursive property reference
         assertThat(dependencyModel.getDependency("commons-io", "commons-io", "jar", null))
                 .satisfies(o -> {
-                    assertThat(o.isPresent());
+                    assertThat(o).isPresent();
                     assertThat(o.get().getVersion()).isEqualTo("${commons.version}");
                 });
         assertThat(model.getProperties().get("commons.version")).isEqualTo("${commons2.version}");
@@ -95,8 +94,8 @@ public class UpgradeComponentsMojoIT {
     void eap_bom_test_case(MavenExecutionResult result) throws MalformedURLException {
         assertThat(result).isSuccessful();
 
-        File manifestFile = new File(result.getMavenProjectResult().getTargetProjectDirectory(), "manifest.yaml");
-        ChannelManifest channel = ChannelManifestMapper.from(manifestFile.toURI().toURL());
+        Path manifestFile = result.getMavenProjectResult().getTargetProjectDirectory().resolve("manifest.yaml");
+        ChannelManifest channel = ChannelManifestMapper.from(manifestFile.toUri().toURL());
         Model model = result.getMavenProjectResult().getModel();
 
         for (Dependency dependency : model.getDependencyManagement().getDependencies()) {
@@ -143,7 +142,7 @@ public class UpgradeComponentsMojoIT {
         // dependency still referencing the property
         assertThat(dependencyModel.getDependency("io.undertow", "undertow-core", "jar", null))
                 .satisfies(o -> {
-                    assertThat(o.isPresent());
+                    assertThat(o).isPresent();
                     assertThat(o.get().getVersion()).isEqualTo("${undertow.version}");
                 });
     }
@@ -167,7 +166,7 @@ public class UpgradeComponentsMojoIT {
         // verify dependency version element has been overridden
         assertThat(dependencyModel.getDependency("io.undertow", "undertow-core", "jar", null))
                 .satisfies(o -> {
-                    assertThat(o.isPresent());
+                    assertThat(o).isPresent();
                     assertThat(o.get().getVersion()).isEqualTo("2.2.5.Final-Overridden");
                 });
     }
