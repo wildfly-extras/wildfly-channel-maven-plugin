@@ -31,16 +31,21 @@ Example:
 
 #### Parameters
 
+Channel location parameters - exactly one of these has to be given:
+
 * `channelFile`: Path to a Wildfly Channel file on a local filesystem.
 * `channelGAV`: Alternative to above, the channel file would be obtained from a maven repo.
 * `manifestFile`: Path to a Wildfly Channel manifest file on a local filesystem.
 * `manifestGAV`: Alternative to above, the manifest file would be obtained from a maven repo.
+
+Additional configuration - all of these are optional:
+
 * `localRepository`: Local maven repository path. Defaults to `~/.m2/repository`.
 * `remoteRepositories`: Comma delimited list of remote repositories, which will be used for resolution of available 
   dependency versions. This is only needed when working with channel containing version patterns (final dependency 
   version is determined dynamically according to what versions are available in given remote Maven repositories).
-* `ignoreStreams`: Comma delimited list of "groupId:artifactId" strings, representing dependencies that should not be 
-   modified.
+* `ignoreStreams`: Comma delimited list of "groupId:artifactId" strings (can be also "groupId:*"), representing
+  dependencies that should not be modified.
 * `ignoreProperties`: Comma delimited list of property names in the project that should not be modified.
 * `ignorePropertiesPrefixedWith`: Comma delimited list of property name prefixes. Properties starting with one of these
   prefixes should not be modified.
