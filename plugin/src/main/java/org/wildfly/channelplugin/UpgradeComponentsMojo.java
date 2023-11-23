@@ -1,26 +1,5 @@
 package org.wildfly.channelplugin;
 
-import java.io.File;
-import java.io.IOException;
-import java.net.MalformedURLException;
-import java.net.URL;
-import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Optional;
-import java.util.Properties;
-import java.util.Set;
-import java.util.stream.Collectors;
-
-import javax.inject.Inject;
-import javax.xml.stream.XMLStreamException;
-
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.tuple.Pair;
 import org.apache.maven.execution.MavenSession;
@@ -49,12 +28,10 @@ import org.commonjava.maven.ext.core.ManipulationSession;
 import org.commonjava.maven.ext.io.PomIO;
 import org.eclipse.aether.DefaultRepositorySystemSession;
 import org.eclipse.aether.RepositorySystem;
-import org.eclipse.aether.artifact.DefaultArtifact;
+import org.eclipse.aether.RepositorySystemSession;
 import org.eclipse.aether.repository.LocalRepository;
 import org.eclipse.aether.repository.LocalRepositoryManager;
-import org.eclipse.aether.resolution.ArtifactRequest;
-import org.eclipse.aether.resolution.ArtifactResolutionException;
-import org.eclipse.aether.resolution.ArtifactResult;
+import org.eclipse.aether.repository.RemoteRepository;
 import org.wildfly.channel.Channel;
 import org.wildfly.channel.ChannelManifestCoordinate;
 import org.wildfly.channel.ChannelMapper;
@@ -62,9 +39,29 @@ import org.wildfly.channel.ChannelSession;
 import org.wildfly.channel.Repository;
 import org.wildfly.channel.UnresolvedMavenArtifactException;
 import org.wildfly.channel.VersionResult;
+import org.wildfly.channel.maven.ChannelCoordinate;
 import org.wildfly.channel.maven.VersionResolverFactory;
 import org.wildfly.channelplugin.manipulation.PomManipulator;
 import org.wildfly.channeltools.util.VersionUtils;
+
+import javax.inject.Inject;
+import javax.xml.stream.XMLStreamException;
+import java.io.File;
+import java.io.IOException;
+import java.net.MalformedURLException;
+import java.net.URL;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.Properties;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 import static org.wildfly.channeltools.util.ConversionUtils.toArtifactRef;
 import static org.wildfly.channeltools.util.ConversionUtils.toProjectRefs;
@@ -80,8 +77,6 @@ import static org.wildfly.channeltools.util.ConversionUtils.toProjectRefs;
 public class UpgradeComponentsMojo extends AbstractMojo {
 
     private static final String LOCAL_MAVEN_REPO = System.getProperty("user.home") + "/.m2/repository";
-    private static final String CHANNEL_CLASSIFIER = "channel";
-    private static final String CHANNEL_EXTENSION = "yaml";
 
     /**
      * Path to the channel definition file on a local filesystem.
@@ -216,7 +211,7 @@ public class UpgradeComponentsMojo extends AbstractMojo {
     @Inject
     RepositorySystem repositorySystem;
 
-    private Channel channel;
+    private List<Channel> channels;
     private ChannelSession channelSession;
     private final List<ProjectRef> ignoredStreams = new ArrayList<>();
     private final List<ProjectRef> ignoredModules = new ArrayList<>();
@@ -241,11 +236,11 @@ public class UpgradeComponentsMojo extends AbstractMojo {
 
         initChannel();
         if (!remoteRepositories.isEmpty()) {
-            channel = overrideRemoteRepositories(channel, remoteRepositories);
+            // TODO: Include remote repositories defined in the project pom.xml?
+            channels = overrideRemoteRepositories(channels, remoteRepositories);
         }
 
-        channelSession = new ChannelSession(Collections.singletonList(channel),
-                new VersionResolverFactory(repositorySystem, repositorySystemSession));
+        channelSession = new ChannelSession(channels, new VersionResolverFactory(repositorySystem, repositorySystemSession));
 
         ignoreStreams.forEach(ga -> ignoredStreams.add(SimpleProjectRef.parse(ga)));
         ignoreModules.forEach(ga -> ignoredModules.add(SimpleProjectRef.parse(ga)));
@@ -350,8 +345,6 @@ public class UpgradeComponentsMojo extends AbstractMojo {
                 }
 
                 Pair<Project, String> projectProperty = followProperties(pmeProject, versionPropertyName);
-                Project targetProject = projectProperty.getLeft();
-                String targetPropertyName = projectProperty.getRight();
 
                 if (projectProperty == null) {
                     Dependency d = locatedDependency;
@@ -361,6 +354,9 @@ public class UpgradeComponentsMojo extends AbstractMojo {
                             versionPropertyName, pmeProject.getPom().getPath());
                     continue;
                 }
+
+                Project targetProject = projectProperty.getLeft();
+                String targetPropertyName = projectProperty.getRight();
                 if (isIgnoredProperty(targetPropertyName)) {
                     getLog().info(String.format("Ignoring property '%s' (ignored prefix)", targetPropertyName));
                     continue;
@@ -609,7 +605,8 @@ public class UpgradeComponentsMojo extends AbstractMojo {
         }
 
         if ((StringUtils.isNotBlank(manifestFile) || StringUtils.isNotBlank(manifestGAV)) && remoteRepositories.isEmpty()) {
-            // throw new MojoExecutionException("The remoteRepositories property is mandatory when manifest is given.");
+            // Do not enforce this for now, repositories are also read from project pom.xml currently.
+            //throw new MojoExecutionException("The remoteRepositories property is mandatory when manifest is given.");
         }
 
         try {
@@ -619,58 +616,90 @@ public class UpgradeComponentsMojo extends AbstractMojo {
                     channelFilePath = Path.of(mavenSession.getExecutionRootDirectory()).resolve(channelFilePath);
                 }
                 getLog().info("Reading channel file " + channelFilePath);
-                channel = ChannelMapper.from(channelFilePath.toUri().toURL());
+                channels = List.of(ChannelMapper.from(channelFilePath.toUri().toURL()));
             } else if (StringUtils.isNotBlank(channelGAV)) {
-                channel = resolveChannel(channelGAV);
+                channels = resolveChannelsFromGav(channelGAV);
             } else if (StringUtils.isNotBlank(manifestFile)) {
                 URL manifestUrl = Path.of(manifestFile).toUri().toURL();
-                channel = new Channel("a-channel", null, null, null, new ChannelManifestCoordinate(manifestUrl), null, null);
+                ChannelManifestCoordinate coordinate = new ChannelManifestCoordinate(manifestUrl);
+                channels = List.of(new Channel("a-channel", null, null, null, coordinate, null, null));
             } else if (StringUtils.isNotBlank(manifestGAV)) {
-                ProjectVersionRef gav = SimpleProjectVersionRef.parse(manifestGAV);
-                channel = new Channel("a-channel", null, null, null, new ChannelManifestCoordinate(gav.getGroupId(), gav.getArtifactId(), gav.getVersionString()), null,
-                        null);
+                ChannelManifestCoordinate coordinate = toManifestCoordinate(manifestGAV);
+                // Compose list of repositories to look for the manifest as a union of the remoteRepositories property
+                // and repositories from the project pom.xml.
+                List<Repository> repositories = mavenProject.getRemoteProjectRepositories().stream()
+                        .map(rr -> new Repository(rr.getId(), rr.getUrl()))
+                        .collect(Collectors.toList());
+                repositories.addAll(createRepositories(remoteRepositories));
+                channels = List.of(new Channel("a-channel", null, null, repositories, coordinate, null, null));
             } else {
                 throw new MojoExecutionException("No channel or manifest specified.");
             }
-
-            if (channel.getManifestCoordinate() == null
-                    || (channel.getManifestCoordinate().getUrl() == null
-                    && channel.getManifestCoordinate().getMaven() == null)) {
-                throw new MojoExecutionException("The channel you provided doesn't reference any manifest. Did you point to the correct file? Use `-DmanifestFile` or `-DmanifestGAV` to reference a manifest, alternatively use `-DchannelFile` or `-DchannelGAV` to reference a channel.");
-            }
         } catch (MalformedURLException e) {
             throw new MojoExecutionException("Can't parse the channel or manifest file path", e);
-        } catch (ArtifactResolutionException e) {
-            throw new MojoExecutionException("Failed to resolve the channel artifact", e);
         }
     }
 
-    /**
-     * Resolves channel file specified by a GAV.
-     * <p>
-     * This searches in all remote repositories specified in the processed project and the settings.xml.
-     */
-    private Channel resolveChannel(String gavString) throws ArtifactResolutionException, MalformedURLException {
-        ProjectVersionRef gav = SimpleProjectVersionRef.parse(gavString);
-        DefaultArtifact artifact = new DefaultArtifact(gav.getGroupId(), gav.getArtifactId(), CHANNEL_CLASSIFIER,
-                CHANNEL_EXTENSION, gav.getVersionString());
+    private List<Channel> resolveChannelsFromGav(String gavString) {
+        ChannelCoordinate channelCoordinate = toChannelCoordinate(gavString);
 
-        ArtifactRequest request = new ArtifactRequest();
-        request.setArtifact(artifact);
-        request.setRepositories(mavenProject.getRemoteProjectRepositories());
-        ArtifactResult artifactResult = repositorySystem.resolveArtifact(mavenSession.getRepositorySession(), request);
-        getLog().info(String.format("Channel file resolved from %s in repository %s",
-                artifact, artifactResult.getRepository().getId()));
-        File channelFile = artifactResult.getArtifact().getFile();
-        return ChannelMapper.from(channelFile.toURI().toURL());
+        RepositorySystemSession repoSession = mavenSession.getRepositorySession();
+
+        // Collect repositories that should be used to locate the channel. Probably this should be a union of the
+        // repositories given in the `remoteRepositories` property and the repositories defined in the project pom.xml.
+        final List<RemoteRepository> channelRepos = new ArrayList<>(mavenProject.getRemoteProjectRepositories());
+        int repoNumber = 0;
+        if (remoteRepositories != null && !remoteRepositories.isEmpty()) {
+            for (String repoUrl: remoteRepositories) {
+                RemoteRepository repo = new RemoteRepository.Builder("repo-" + repoNumber++, "default", repoUrl).build();
+                channelRepos.add(repo);
+            }
+        }
+
+        try (VersionResolverFactory versionResolverFactory = new VersionResolverFactory(repositorySystem, repoSession)) {
+            return versionResolverFactory.resolveChannels(List.of(channelCoordinate), channelRepos);
+        } catch (MalformedURLException e) {
+            // This should not happen here, URL coordinates are not supposed to be present.
+            throw new IllegalStateException("Couldn't resolve channel GAV", e);
+        }
     }
 
-    private final Channel overrideRemoteRepositories(Channel channel, List<String> repositories) {
-        return new Channel(channel.getName(), channel.getDescription(), channel.getVendor(), createRepositories(repositories),
-                channel.getManifestCoordinate(), channel.getBlocklistCoordinate(), channel.getNoStreamStrategy());
+    private static ChannelCoordinate toChannelCoordinate(String gavString) {
+        String[] gavSegments = gavString.split(":");
+        ChannelCoordinate coordinate;
+        if (gavSegments.length == 2) {
+            coordinate = new ChannelCoordinate(gavSegments[0], gavSegments[1]);
+        } else if (gavSegments.length == 3) {
+            coordinate = new ChannelCoordinate(gavSegments[0], gavSegments[1], gavSegments[2]);
+        } else {
+            throw new IllegalArgumentException("Invalid GAV string, channel GAV has to have two or three segments separated with ':'. Given value was: " + gavString);
+        }
+        return coordinate;
     }
 
-    private final List<Repository> createRepositories(List<String> userRepositories) {
+    private static ChannelManifestCoordinate toManifestCoordinate(String gavString) {
+        String[] gavSegments = gavString.split(":");
+        ChannelManifestCoordinate coordinate;
+        if (gavSegments.length == 2) {
+            coordinate = new ChannelManifestCoordinate(gavSegments[0], gavSegments[1]);
+        } else if (gavSegments.length == 3) {
+            coordinate = new ChannelManifestCoordinate(gavSegments[0], gavSegments[1], gavSegments[2]);
+        } else {
+            throw new IllegalArgumentException("Invalid GAV string, manifest GAV has to have two or three segments separated with ':'. Given value was: " + gavString);
+        }
+        return coordinate;
+    }
+
+    private List<Channel> overrideRemoteRepositories(List<Channel> channels, List<String> repositories) {
+        List<Channel> updatedChannels = new ArrayList<>(channels.size());
+        for (Channel channel: channels) {
+            updatedChannels.add(new Channel(channel.getName(), channel.getDescription(), channel.getVendor(), createRepositories(repositories),
+                    channel.getManifestCoordinate(), channel.getBlocklistCoordinate(), channel.getNoStreamStrategy()));
+        }
+        return updatedChannels;
+    }
+
+    private List<Repository> createRepositories(List<String> userRepositories) {
         HashMap<String, Repository> result = new HashMap<>();
         int idx = 0;
         for (String input: userRepositories) {
