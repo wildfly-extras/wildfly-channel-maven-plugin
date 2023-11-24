@@ -51,6 +51,9 @@ Additional configuration - all of these are optional:
   prefixes should not be modified.
 * `ignoreModules`: Comma delimited list of "groupId:artifactId" strings, representing project submodules that should not
   be processed (no dependencies or properties in given modules will be modified).
+* `ignoreTestDependencies`: If true, dependencies that are only in the test scope will not be upgraded. True by default.
+* `injectTransitiveDependencies`: If true, transitive dependencies are upgraded too, by injecting new declarations into
+  the \<dependencyManagement\> section.
 * `overrideProperties`: Comma delimited list of "propertyName=newValue" strings, meaning that diven properties (in any 
   project module) should be overridden to given values. This takes preference over modifications inferred from the 
   channel.

@@ -193,6 +193,9 @@ public class UpgradeComponentsMojo extends AbstractMojo {
     @Parameter(property = "copyExclusionsFrom")
     String copyExclusionsFrom;
 
+    @Parameter(property = "ignoreTestDependencies", defaultValue = "true")
+    boolean ignoreTestDependencies;
+
     @Inject
     DependencyGraphBuilder dependencyGraphBuilder;
 
@@ -571,6 +574,11 @@ public class UpgradeComponentsMojo extends AbstractMojo {
                 getLog().warn("Resolved dependency has version with property: " + artifactRef);
                 continue;
             }
+            if ("test".equals(dependency.getScope()) && ignoreTestDependencies) {
+                getLog().info("Skipping dependency (ignored scope): "
+                        + artifactRef.asProjectVersionRef().toString());
+                continue;
+            }
 
 
             try {
@@ -785,9 +793,14 @@ public class UpgradeComponentsMojo extends AbstractMojo {
             visitor.getNodes().forEach(node -> {
                 ArtifactRef artifact = toArtifactRef(node.getArtifact());
                 Collection<ProjectRef> exclusions = artifactExclusions.get(artifact);
-                if (!declaredDependencies.contains(artifact.asProjectRef())) {
-                    undeclaredDependencies.put(artifact, exclusions);
+                if (declaredDependencies.contains(artifact.asProjectRef())) {
+                    return;
                 }
+                if ("test".equals(node.getArtifact().getScope()) && ignoreTestDependencies) {
+                    // Ignore test scope undeclared dependencies entirely.
+                    return;
+                }
+                undeclaredDependencies.put(artifact, exclusions);
             });
         }
         return undeclaredDependencies;
