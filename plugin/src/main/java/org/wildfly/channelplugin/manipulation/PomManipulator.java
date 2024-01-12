@@ -95,6 +95,10 @@ public class PomManipulator {
         }
     }
 
+    public void injectProperty(String key, String version) throws XMLStreamException {
+        injectProperty(eventReader, key, version);
+    }
+
     /**
      * Writes the updated POM file.
      */
@@ -138,6 +142,38 @@ public class PomManipulator {
                     eventReader.mark(0);
                     eventReader.replaceMark(0, composeDependencyElementString(dependency, exclusions)
                                     + "        </dependencies>"
+                    );
+                    eventReader.clearMark(0);
+                    break;
+                }
+
+                path = stack.pop();
+            }
+        }
+    }
+
+    /**
+     * This method attempts to inject new property at the end of the properties section.
+     * <p>
+     * The properties section must be already present in the POM.
+     */
+    static void injectProperty(ModifiedPomXMLEventReader eventReader, String key, String version) throws XMLStreamException {
+        eventReader.rewind();
+
+        Stack<String> stack = new Stack<String>();
+        String path = "";
+
+        while (eventReader.hasNext()) {
+            XMLEvent event = eventReader.nextEvent();
+            if (event.isStartElement()) {
+                stack.push(path);
+                path = path + "/" + event.asStartElement().getName().getLocalPart();
+            } else if (event.isEndElement()) {
+                if (event.asEndElement().getName().getLocalPart().equals("properties")
+                        && path.equals("/project/properties")) {
+                    eventReader.mark(0);
+                    eventReader.replaceMark(0, String.format("<%s>%s</%s>\n", key, version, key)
+                            + "  </properties>"
                     );
                     eventReader.clearMark(0);
                     break;

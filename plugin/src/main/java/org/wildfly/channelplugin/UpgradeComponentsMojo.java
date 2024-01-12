@@ -24,6 +24,7 @@ import org.commonjava.maven.atlas.ident.ref.SimpleProjectRef;
 import org.commonjava.maven.atlas.ident.ref.SimpleProjectVersionRef;
 import org.commonjava.maven.ext.common.ManipulationException;
 import org.commonjava.maven.ext.common.model.Project;
+import org.commonjava.maven.ext.common.model.SimpleScopedArtifactRef;
 import org.commonjava.maven.ext.core.ManipulationSession;
 import org.commonjava.maven.ext.io.PomIO;
 import org.eclipse.aether.DefaultRepositorySystemSession;
@@ -223,6 +224,8 @@ public class UpgradeComponentsMojo extends AbstractMojo {
     private final HashMap<Pair<Project, String>, String> upgradedProperties = new HashMap<>();
     private final Set<ProjectRef> declaredDependencies = new HashSet<>();
 
+    private Map<String, String> parentProperties = new HashMap<>();
+
     /**
      * This includes pre-processing of input parameters.
      */
@@ -283,6 +286,9 @@ public class UpgradeComponentsMojo extends AbstractMojo {
 
             // process project modules
             for (Project project: pmeProjects) {
+                if (mavenProject.getParent() != null && mavenProject.getParent().getModel().getProperties() != null) {
+                    mavenProject.getParent().getModel().getProperties().forEach((k, v) -> parentProperties.put((String) k, (String) v));
+                }
                 ProjectRef moduleGA = project.getKey().asProjectRef();
                 if (ignoredModules.contains(moduleGA)) {
                     getLog().info(String.format("Skipping module %s:%s", project.getGroupId(), project.getArtifactId()));
@@ -349,21 +355,48 @@ public class UpgradeComponentsMojo extends AbstractMojo {
 
                 Pair<Project, String> projectProperty = followProperties(pmeProject, versionPropertyName);
 
+                if (isIgnoredProperty(versionPropertyName)) {
+                    getLog().info(String.format("Ignoring property '%s' (ignored prefix)", versionPropertyName));
+                    continue;
+                }
+
                 if (projectProperty == null) {
                     Dependency d = locatedDependency;
-                    ChannelPluginLogger.LOGGER.errorf(
-                            "Unable to upgrade %s:%s:%s to '%s', can't locate property '%s' in POM file %s",
-                            d.getGroupId(), d.getArtifactId(), d.getVersion(), newVersion,
-                            versionPropertyName, pmeProject.getPom().getPath());
+                    ChannelPluginLogger.LOGGER.infof(
+                            "Adding property %s to update %s:%s:%s to '%s'",
+                            versionPropertyName, d.getGroupId(), d.getArtifactId(), d.getVersion(), newVersion);
+
+                    final Pair<Project, String> key = Pair.of(pmeProject, versionPropertyName);
+                    if (upgradedProperties.containsKey(key) ) {
+                            if (!upgradedProperties.get(key).equals(newVersion)) {
+                                // property has already been changed to different value
+                                String currentPropertyValue = upgradedProperties.get(key);
+                                if (inlineVersionOnConflict) {
+                                    getLog().warn(String.format("Inlining version string for %s:%s:%s, new version '%s'. " +
+                                                    "The original version property '%s' has already been modified to '%s'.",
+                                            d.getGroupId(), d.getArtifactId(), d.getVersion(), newVersion, versionPropertyName,
+                                            currentPropertyValue));
+                                    manipulator.overrideDependencyVersion(d.getGroupId(), d.getArtifactId(),
+                                            originalVersionString, newVersion);
+                                } else {
+                                    getLog().warn(String.format(
+                                            "Can't upgrade %s:%s:%s to '%s', property '%s' was already upgraded to '%s'.",
+                                            d.getGroupId(), d.getArtifactId(), d.getVersion(), newVersion,
+                                            versionPropertyName,
+                                            currentPropertyValue));
+                                }
+                            }
+                        continue; // do not override the property again
+                    }
+                    upgradedProperties.put(key, newVersion);
+                    PomManipulator targetManipulator = manipulators.get(
+                            Pair.of(pmeProject.getGroupId(), pmeProject.getArtifactId()));
+                    targetManipulator.injectProperty(versionPropertyName, newVersion);
                     continue;
                 }
 
                 Project targetProject = projectProperty.getLeft();
                 String targetPropertyName = projectProperty.getRight();
-                if (isIgnoredProperty(targetPropertyName)) {
-                    getLog().info(String.format("Ignoring property '%s' (ignored prefix)", targetPropertyName));
-                    continue;
-                }
 
                 if (upgradedProperties.containsKey(projectProperty)) {
                     if (!upgradedProperties.get(projectProperty).equals(newVersion)) {
@@ -570,9 +603,20 @@ public class UpgradeComponentsMojo extends AbstractMojo {
                 continue;
             }
             if (VersionUtils.isProperty(artifactRef.getVersionString())) {
-                // didn't manage to resolve dependency version
-                getLog().warn("Resolved dependency has version with property: " + artifactRef);
-                continue;
+                if (parentProperties.containsKey(VersionUtils.extractPropertyName(artifactRef.getVersionString()))) {
+                    artifactRef = new SimpleScopedArtifactRef(
+                            artifactRef.getGroupId(),
+                            artifactRef.getArtifactId(),
+                            parentProperties.get(VersionUtils.extractPropertyName(artifactRef.getVersionString())),
+                            artifactRef.getType(),
+                            artifactRef.getClassifier(),
+                            ((SimpleScopedArtifactRef)artifactRef).getScope()
+                            );
+                } else {
+                    // didn't manage to resolve dependency version
+                    getLog().warn("Resolved dependency has version with property: " + artifactRef);
+                    continue;
+                }
             }
             if ("test".equals(dependency.getScope()) && ignoreTestDependencies) {
                 getLog().info("Skipping dependency (ignored scope): "
