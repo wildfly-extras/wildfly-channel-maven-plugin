@@ -1,0 +1,6 @@
+schemaVersion: 1.0.0
+name: Sample Manifest
+streams:
+  - groupId: org.apache.maven.plugins
+    artifactId: maven-clean-plugin
+    version: "3.3.2"

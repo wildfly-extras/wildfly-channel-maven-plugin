@@ -12,6 +12,7 @@ import java.util.List;
 import javax.xml.stream.XMLInputFactory;
 import javax.xml.stream.XMLStreamException;
 
+import org.apache.maven.model.Model;
 import org.assertj.core.api.Assertions;
 import org.codehaus.mojo.versions.api.PomHelper;
 import org.codehaus.mojo.versions.rewriting.ModifiedPomXMLEventReader;
@@ -33,6 +34,7 @@ public class PomManipulatorTestCase {
     @BeforeEach
     public void before() throws XMLStreamException, URISyntaxException, IOException {
         URL pomUrl = getClass().getResource("pom.xml");
+        Assertions.assertThat(pomUrl).isNotNull();
         content = PomHelper.readXmlFile(new File(pomUrl.toURI()));
 
         XMLInputFactory inputFactory = XMLInputFactory2.newInstance();
@@ -41,8 +43,7 @@ public class PomManipulatorTestCase {
     }
 
     @Test
-    public void testInsertManagedDependency()
-            throws IOException, XMLStreamException, ManipulationException {
+    public void testInsertManagedDependency() throws IOException, XMLStreamException, ManipulationException {
         ArtifactRef dep = new SimpleArtifactRef("org.aesh", "aesh", "2.4.0", "jar", null);
 
         DependencyModel model = readDependencyModel();
@@ -59,13 +60,28 @@ public class PomManipulatorTestCase {
                 });
     }
 
-    private DependencyModel readDependencyModel() throws IOException, ManipulationException {
+    @Test
+    public void testInsertProperty() throws IOException, XMLStreamException, ManipulationException {
+        Model model = readModel();
+        Assertions.assertThat(model.getProperties().contains("prop")).isFalse();
+
+        PomManipulator.injectProperty(eventReader, "prop", "value");
+
+        model = readModel();
+        Assertions.assertThat(model.getProperties().getProperty("prop")).isEqualTo("value");
+    }
+
+    private Model readModel() throws IOException, ManipulationException {
         Path pomFile = Files.createTempFile("pom", "xml");
         Files.write(pomFile, content.toString().getBytes());
 
         PomIO pomIO = new PomIO();
         List<Project> projects = pomIO.parseProject(pomFile.toFile());
         Assertions.assertThat(projects.size()).isEqualTo(1);
-        return new DependencyModel(projects.get(0).getModel());
+        return projects.get(0).getModel();
+    }
+
+    private DependencyModel readDependencyModel() throws IOException, ManipulationException {
+        return new DependencyModel(readModel());
     }
 }

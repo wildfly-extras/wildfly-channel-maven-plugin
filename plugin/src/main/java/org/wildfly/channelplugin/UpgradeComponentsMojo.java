@@ -196,6 +196,14 @@ public class UpgradeComponentsMojo extends AbstractMojo {
     @Parameter(property = "ignoreTestDependencies", defaultValue = "true")
     boolean ignoreTestDependencies;
 
+    /**
+     * When a dependency is defined with version string referencing a property, and that property is defined in a parent
+     * pom outside the project, the property would be injected into a pom where the dependency is defined, if this
+     * parameter is set to true (default).
+     */
+    @Parameter(property = "injectExternalProperties", defaultValue = "true")
+    boolean injectExternalProperties;
+
     @Inject
     DependencyGraphBuilder dependencyGraphBuilder;
 
@@ -333,6 +341,9 @@ public class UpgradeComponentsMojo extends AbstractMojo {
             String newVersion = upgrade.getRight();
             Dependency locatedDependency = upgrade.getLeft();
 
+            @SuppressWarnings("UnnecessaryLocalVariable")
+            Dependency d = locatedDependency;
+
             if (overriddenDependencies.contains(locatedDependency)) {
                 // if there was a hard version override, the dependency is not processed again
                 continue;
@@ -348,27 +359,32 @@ public class UpgradeComponentsMojo extends AbstractMojo {
                 }
 
                 Pair<Project, String> projectProperty = followProperties(pmeProject, versionPropertyName);
+                if (projectProperty == null) {
+                    Pair<String, String> externalProperty = resolveExternalProperty(mavenProject, versionPropertyName);
+                    if (externalProperty != null) {
+                        projectProperty = Pair.of(null, externalProperty.getLeft());
+                    }
+                }
 
                 if (projectProperty == null) {
-                    Dependency d = locatedDependency;
                     ChannelPluginLogger.LOGGER.errorf(
-                            "Unable to upgrade %s:%s:%s to '%s', can't locate property '%s' in POM file %s",
+                            "Unable to upgrade %s:%s:%s to '%s', can't locate property '%s' in the project",
                             d.getGroupId(), d.getArtifactId(), d.getVersion(), newVersion,
-                            versionPropertyName, pmeProject.getPom().getPath());
+                            versionPropertyName);
                     continue;
                 }
 
                 Project targetProject = projectProperty.getLeft();
                 String targetPropertyName = projectProperty.getRight();
+
                 if (isIgnoredProperty(targetPropertyName)) {
-                    getLog().info(String.format("Ignoring property '%s' (ignored prefix)", targetPropertyName));
+                    getLog().info(String.format("Ignoring property '%s'", targetPropertyName));
                     continue;
                 }
 
                 if (upgradedProperties.containsKey(projectProperty)) {
                     if (!upgradedProperties.get(projectProperty).equals(newVersion)) {
                         // property has already been changed to different value
-                        Dependency d = locatedDependency;
                         String propertyName = projectProperty.getRight();
                         String currentPropertyValue = upgradedProperties.get(projectProperty);
                         if (inlineVersionOnConflict) {
@@ -391,10 +407,25 @@ public class UpgradeComponentsMojo extends AbstractMojo {
 
                 // get manipulator for the module where the target property is located
                 upgradedProperties.put(projectProperty, newVersion);
-                PomManipulator targetManipulator = manipulators.get(
-                        Pair.of(targetProject.getGroupId(), targetProject.getArtifactId()));
-                targetManipulator.overrideProperty(targetPropertyName, newVersion);
-            } else { // dependency version is inlined in version element, can be directly overriden
+
+                if (targetProject != null) {
+                    // property has been located in some project module
+                    // => override the located property in the module where it has been located
+                    PomManipulator targetManipulator = manipulators.get(
+                            Pair.of(targetProject.getGroupId(), targetProject.getArtifactId()));
+                    targetManipulator.overrideProperty(targetPropertyName, newVersion);
+                } else if (injectExternalProperties) {
+                    // property has been located in external parent pom
+                    // => inject the property into current module
+                    PomManipulator targetManipulator = manipulators.get(
+                            Pair.of(pmeProject.getGroupId(), pmeProject.getArtifactId()));
+                    targetManipulator.injectProperty(targetPropertyName, newVersion);
+                } else {
+                    getLog().warn(String.format("Can't upgrade %s:%s:%s to %s, property %s is not defined in the " +
+                                    "scope of the project (consider enabling the injectExternalProperties parameter).",
+                            d.getGroupId(), d.getArtifactId(), d.getVersion(), newVersion, targetPropertyName));
+                }
+            } else { // dependency version is inlined in version element, can be directly overwritten
                 manipulator.overrideDependencyVersion(toArtifactRef(locatedDependency), newVersion);
             }
         }
@@ -566,13 +597,22 @@ public class UpgradeComponentsMojo extends AbstractMojo {
                 continue;
             }
             if (artifactRef.getVersionString() == null) {
-                getLog().warn("Resolved dependency has null version: " + artifactRef);
+                // this is not expected to happen
+                getLog().error("Resolved dependency has null version: " + artifactRef);
                 continue;
             }
             if (VersionUtils.isProperty(artifactRef.getVersionString())) {
-                // didn't manage to resolve dependency version
-                getLog().warn("Resolved dependency has version with property: " + artifactRef);
-                continue;
+                // hack: PME doesn't seem to resolve properties from external parent poms
+                Pair<String, String> externalProperty = resolveExternalProperty(mavenProject,
+                        VersionUtils.extractPropertyName(artifactRef.getVersionString()));
+                if (externalProperty != null) {
+                    artifactRef = new SimpleArtifactRef(artifactRef.getGroupId(), artifactRef.getArtifactId(),
+                            externalProperty.getRight(), artifactRef.getType(), artifactRef.getClassifier());
+                } else {
+                    // didn't manage to resolve dependency version, this is not expected to happen
+                    getLog().error("Resolved dependency has version with property: " + artifactRef);
+                    continue;
+                }
             }
             if ("test".equals(dependency.getScope()) && ignoreTestDependencies) {
                 getLog().info("Skipping dependency (ignored scope): "
@@ -612,10 +652,10 @@ public class UpgradeComponentsMojo extends AbstractMojo {
             throw new MojoExecutionException("Exactly one of [channelFile, channelGAV, manifestFile, manifestGAV] has to be given.");
         }
 
-        if ((StringUtils.isNotBlank(manifestFile) || StringUtils.isNotBlank(manifestGAV)) && remoteRepositories.isEmpty()) {
-            // Do not enforce this for now, repositories are also read from project pom.xml currently.
-            //throw new MojoExecutionException("The remoteRepositories property is mandatory when manifest is given.");
-        }
+        // Do not enforce this for now, repositories are also read from project pom.xml currently.
+        /*if ((StringUtils.isNotBlank(manifestFile) || StringUtils.isNotBlank(manifestGAV)) && remoteRepositories.isEmpty()) {
+            throw new MojoExecutionException("The remoteRepositories property is mandatory when manifest is given.");
+        }*/
 
         try {
             if (StringUtils.isNotBlank(channelFile)) {
@@ -835,6 +875,34 @@ public class UpgradeComponentsMojo extends AbstractMojo {
                 }
             }
             return Pair.of(pmeProject, propertyName);
+        }
+    }
+
+    /**
+     * Resolves a property from external parent pom. If given property references another property, this method
+     * tries to traverse the property chain.
+     *
+     * @return pair [property, value], where the property is the last property name in the traversal chain
+     */
+    static Pair<String, String> resolveExternalProperty(MavenProject mavenProject, String propertyName) {
+        if (mavenProject == null) {
+            return null;
+        }
+        Properties properties = mavenProject.getModel().getProperties();
+        if (!properties.containsKey(propertyName)) {
+            return resolveExternalProperty(mavenProject.getParent(), propertyName);
+        } else {
+            // property is defined in this module
+            String propertyValue = (String) properties.get(propertyName);
+            if (VersionUtils.isProperty(propertyValue)) {
+                // the property value is also a property reference -> follow the chain
+                String newPropertyName = VersionUtils.extractPropertyName(propertyValue);
+                Pair<String, String> targetProperty = resolveExternalProperty(mavenProject, newPropertyName);
+                if (targetProperty != null) {
+                    return targetProperty;
+                }
+            }
+            return Pair.of(propertyName, propertyValue);
         }
     }
 

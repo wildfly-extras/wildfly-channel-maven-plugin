@@ -136,7 +136,7 @@ public class UpgradeComponentsMojoIT {
         Model model = result.getMavenProjectResult().getModel();
         DependencyModel dependencyModel = new DependencyModel(model);
 
-        // verify version property has been overriden
+        // verify version property has been overridden
         assertThat(model.getProperties().getProperty("undertow.version"))
                 .usingComparator(VersionMatcher.COMPARATOR).isEqualTo("2.2.5.Final-Overridden");
         // dependency still referencing the property
@@ -168,6 +168,29 @@ public class UpgradeComponentsMojoIT {
                 .satisfies(o -> {
                     assertThat(o).isPresent();
                     assertThat(o.get().getVersion()).isEqualTo("2.2.5.Final-Overridden");
+                });
+    }
+
+
+    /**
+     * Tests injecting properties defined in external parent pom.
+     */
+    @MavenGoal("${project.groupId}:wildfly-channel-maven-plugin:${project.version}:upgrade")
+    @SystemProperty(value = "manifestFile", content = "manifest.yaml")
+    @MavenTest
+    void external_properties_test_case(MavenExecutionResult result) {
+        assertThat(result).isSuccessful();
+
+        Model model = result.getMavenProjectResult().getModel();
+        DependencyModel dependencyModel = new DependencyModel(model);
+
+        // verify version property has been overridden
+        assertThat(model.getProperties().get("version.clean.plugin")).isEqualTo("3.3.2");
+        // verify dependency still referencing the property
+        assertThat(dependencyModel.getDependency("org.apache.maven.plugins", "maven-clean-plugin", "pom", null))
+                .satisfies(o -> {
+                    assertThat(o).isPresent();
+                    assertThat(o.get().getVersion()).isEqualTo("${version.clean.plugin}");
                 });
     }
 }
