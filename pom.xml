@@ -244,7 +244,7 @@
                     <autoVersionSubmodules>true</autoVersionSubmodules>
                     <tagNameFormat>@{project.version}</tagNameFormat>
                     <preparationGoals>verify</preparationGoals>
-                    <pushChanges>false</pushChanges>
+                    <pushChanges>true</pushChanges>
                     <localCheckout>true</localCheckout>
                     <remoteTagging>true</remoteTagging>
                     <arguments>-DskipTests ${release.arguments}</arguments>
