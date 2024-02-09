@@ -1,6 +1,5 @@
 package org.wildfly.channelplugin;
 
-import org.apache.commons.io.FileUtils;
 import org.apache.maven.artifact.Artifact;
 import org.apache.maven.plugin.AbstractMojo;
 import org.apache.maven.plugin.MojoExecutionException;
@@ -16,9 +15,10 @@ import org.wildfly.channel.ChannelManifestMapper;
 import org.wildfly.channel.Stream;
 
 import javax.inject.Inject;
-import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Set;
@@ -129,9 +129,12 @@ public class CreateManifestMojo extends AbstractMojo {
 
         try {
             final String yaml = ChannelManifestMapper.toYaml(channelManifest);
-            final File file = new File("target/manifest.yaml");
-            FileUtils.writeStringToFile(file, yaml, StandardCharsets.UTF_8);
-            projectHelper.attachArtifact(project, "yaml", "manifest", file);
+            final String manifestFileName = String.format("%s-%s-%s.%s",
+                    project.getArtifactId(), project.getVersion(),
+                    ChannelManifest.CLASSIFIER, ChannelManifest.EXTENSION);
+            final Path outputPath = Path.of(project.getBuild().getDirectory(), manifestFileName);
+            Files.writeString(outputPath, yaml, StandardCharsets.UTF_8);
+            projectHelper.attachArtifact(project, ChannelManifest.EXTENSION, ChannelManifest.CLASSIFIER, outputPath.toFile());
         } catch (IOException e) {
             throw new MojoExecutionException("Unable to serialize manifest", e);
         }
