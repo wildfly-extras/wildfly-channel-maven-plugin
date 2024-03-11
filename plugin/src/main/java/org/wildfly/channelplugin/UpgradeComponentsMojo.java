@@ -42,6 +42,7 @@ import org.wildfly.channel.VersionResult;
 import org.wildfly.channel.maven.ChannelCoordinate;
 import org.wildfly.channel.maven.VersionResolverFactory;
 import org.wildfly.channelplugin.manipulation.PomManipulator;
+import org.wildfly.channelplugin.utils.IOUtils;
 import org.wildfly.channeltools.util.VersionUtils;
 
 import javax.inject.Inject;
@@ -236,7 +237,11 @@ public class UpgradeComponentsMojo extends AbstractMojo {
      */
     private void init() throws MojoExecutionException {
         if (StringUtils.isBlank(localRepositoryPath)) {
-            localRepositoryPath = LOCAL_MAVEN_REPO;
+            try {
+                localRepositoryPath = IOUtils.createTemporaryCache();
+            } catch (IOException e) {
+                throw new MojoExecutionException("Cannot create local maven cache", e);
+            }
         }
 
         final DefaultRepositorySystemSession repositorySystemSession = MavenRepositorySystemUtils.newSession();
