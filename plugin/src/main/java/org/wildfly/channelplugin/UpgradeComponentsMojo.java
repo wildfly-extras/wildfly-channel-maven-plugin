@@ -223,7 +223,7 @@ public class UpgradeComponentsMojo extends AbstractMojo {
     @Inject
     RepositorySystem repositorySystem;
 
-    private List<Channel> channels;
+    private List<Channel> channels = new ArrayList<>();
     private ChannelSession channelSession;
     private final List<ProjectRef> ignoredStreams = new ArrayList<>();
     private final List<ProjectRef> ignoredModules = new ArrayList<>();
@@ -664,27 +664,39 @@ public class UpgradeComponentsMojo extends AbstractMojo {
 
         try {
             if (StringUtils.isNotBlank(channelFile)) {
-                Path channelFilePath = Path.of(channelFile);
-                if (!channelFilePath.isAbsolute()) {
-                    channelFilePath = Path.of(mavenSession.getExecutionRootDirectory()).resolve(channelFilePath);
+                String[] paths = channelFile.split(",");
+                for (String path: paths) {
+                    Path channelFilePath = Path.of(path);
+                    if (!channelFilePath.isAbsolute()) {
+                        channelFilePath = Path.of(mavenSession.getExecutionRootDirectory()).resolve(channelFilePath);
+                    }
+                    getLog().info("Reading channel file " + channelFilePath);
+                    channels.add(ChannelMapper.from(channelFilePath.toUri().toURL()));
                 }
-                getLog().info("Reading channel file " + channelFilePath);
-                channels = List.of(ChannelMapper.from(channelFilePath.toUri().toURL()));
             } else if (StringUtils.isNotBlank(channelGAV)) {
-                channels = resolveChannelsFromGav(channelGAV);
+                String[] gavs = channelGAV.split(",");
+                for (String gav: gavs) {
+                    channels.addAll(resolveChannelsFromGav(gav));
+                }
             } else if (StringUtils.isNotBlank(manifestFile)) {
-                URL manifestUrl = Path.of(manifestFile).toUri().toURL();
-                ChannelManifestCoordinate coordinate = new ChannelManifestCoordinate(manifestUrl);
-                channels = List.of(new Channel("a-channel", null, null, null, coordinate, null, null));
+                String[] paths = manifestFile.split(",");
+                for (String path: paths) {
+                    URL manifestUrl = Path.of(path).toUri().toURL();
+                    ChannelManifestCoordinate coordinate = new ChannelManifestCoordinate(manifestUrl);
+                    channels.add(new Channel("a-channel", null, null, null, coordinate, null, null));
+                }
             } else if (StringUtils.isNotBlank(manifestGAV)) {
-                ChannelManifestCoordinate coordinate = toManifestCoordinate(manifestGAV);
-                // Compose list of repositories to look for the manifest as a union of the remoteRepositories property
-                // and repositories from the project pom.xml.
-                List<Repository> repositories = mavenProject.getRemoteProjectRepositories().stream()
-                        .map(rr -> new Repository(rr.getId(), rr.getUrl()))
-                        .collect(Collectors.toList());
-                repositories.addAll(createRepositories(remoteRepositories));
-                channels = List.of(new Channel("a-channel", null, null, repositories, coordinate, null, null));
+                String[] gavs = manifestGAV.split(",");
+                for (String gav: gavs) {
+                    ChannelManifestCoordinate coordinate = toManifestCoordinate(gav);
+                    // Compose list of repositories to look for the manifest as a union of the remoteRepositories property
+                    // and repositories from the project pom.xml.
+                    List<Repository> repositories = mavenProject.getRemoteProjectRepositories().stream()
+                            .map(rr -> new Repository(rr.getId(), rr.getUrl()))
+                            .collect(Collectors.toList());
+                    repositories.addAll(createRepositories(remoteRepositories));
+                    channels.add(new Channel("a-channel", null, null, repositories, coordinate, null, null));
+                }
             } else {
                 throw new MojoExecutionException("No channel or manifest specified.");
             }
