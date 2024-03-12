@@ -4,7 +4,6 @@ import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.tuple.Pair;
 import org.apache.maven.execution.MavenSession;
 import org.apache.maven.model.Dependency;
-import org.apache.maven.plugin.AbstractMojo;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugins.annotations.Mojo;
 import org.apache.maven.plugins.annotations.Parameter;
@@ -25,7 +24,6 @@ import org.commonjava.maven.atlas.ident.ref.SimpleProjectVersionRef;
 import org.commonjava.maven.ext.common.ManipulationException;
 import org.commonjava.maven.ext.common.model.Project;
 import org.commonjava.maven.ext.core.ManipulationSession;
-import org.commonjava.maven.ext.io.PomIO;
 import org.eclipse.aether.DefaultRepositorySystemSession;
 import org.eclipse.aether.RepositorySystem;
 import org.eclipse.aether.RepositorySystemSession;
@@ -75,16 +73,14 @@ import static org.wildfly.channeltools.util.ConversionUtils.toProjectRefs;
  * <li>`channelGAV` to lookup an artifact containing the channel file.</li>
  */
 @Mojo(name = "upgrade", requiresProject = true, requiresDirectInvocation = true)
-public class UpgradeComponentsMojo extends AbstractMojo {
-
-    private static final String LOCAL_MAVEN_REPO = System.getProperty("user.home") + "/.m2/repository";
+public class UpgradeComponentsMojo extends AbstractChannelMojo {
 
     /**
      * Path to the channel definition file on a local filesystem.
      * <p>
      * Exactly one of 'channelFile', 'manifestFile', 'channelGAV', 'manifestGAV' can be set.
      */
-    @Parameter(required = false, property = "channelFile")
+    @Parameter(property = "channelFile")
     String channelFile;
 
     /**
@@ -92,7 +88,7 @@ public class UpgradeComponentsMojo extends AbstractMojo {
      * <p>
      * Exactly one of 'channelFile', 'manifestFile', 'channelGAV', 'manifestGAV' can be set.
      */
-    @Parameter(required = false, property = "manifestFile")
+    @Parameter(property = "manifestFile")
     String manifestFile;
 
     /**
@@ -100,7 +96,7 @@ public class UpgradeComponentsMojo extends AbstractMojo {
      * <p>
      * Exactly one of 'channelFile', 'manifestFile', 'channelGAV', 'manifestGAV' can be set.
      */
-    @Parameter(required = false, property = "channelGAV")
+    @Parameter(property = "channelGAV")
     String channelGAV;
 
     /**
@@ -108,13 +104,13 @@ public class UpgradeComponentsMojo extends AbstractMojo {
      * <p>
      * Exactly one of 'channelFile', 'manifestFile', 'channelGAV', 'manifestGAV' can be set.
      */
-    @Parameter(required = false, property = "manifestGAV")
+    @Parameter(property = "manifestGAV")
     String manifestGAV;
 
     /**
      * Comma separated list of remote repositories URLs, that should be used to resolve artifacts.
      */
-    @Parameter(required = false, property = "remoteRepositories")
+    @Parameter(property = "remoteRepositories")
     List<String> remoteRepositories;
 
     /**
@@ -205,17 +201,18 @@ public class UpgradeComponentsMojo extends AbstractMojo {
     @Parameter(property = "injectExternalProperties", defaultValue = "true")
     boolean injectExternalProperties;
 
+    /**
+     * Should the remote maven repositories (specified via -DremoteRepositories or in input channels) be injected into
+     * the parent project POM, to ensure that project is buildable?
+     */
+    @Parameter(property = "injectRepositories", defaultValue = "true")
+    boolean injectRepositories;
+
     @Inject
     DependencyGraphBuilder dependencyGraphBuilder;
 
     @Inject
-    MavenProject mavenProject;
-
-    @Inject
     MavenSession mavenSession;
-
-    @Inject
-    PomIO pomIO;
 
     @Inject
     ManipulationSession manipulationSession;
@@ -313,6 +310,13 @@ public class UpgradeComponentsMojo extends AbstractMojo {
 
             if (injectTransitiveDependencies) {
                 injectTransitiveDependencies();
+            }
+
+            // if channel was given as an input, insert channel repositories into the parent pom
+            if (injectRepositories) {
+                Project rootProject = findRootProject(pmeProjects);
+                PomManipulator rootManipulator = manipulators.get(Pair.of(rootProject.getGroupId(), rootProject.getArtifactId()));
+                InjectRepositoriesMojo.insertRepositories(rootProject, rootManipulator, channels);
             }
 
             // override modified poms
@@ -755,7 +759,7 @@ public class UpgradeComponentsMojo extends AbstractMojo {
         return coordinate;
     }
 
-    private List<Channel> overrideRemoteRepositories(List<Channel> channels, List<String> repositories) {
+    private static List<Channel> overrideRemoteRepositories(List<Channel> channels, List<String> repositories) {
         List<Channel> updatedChannels = new ArrayList<>(channels.size());
         for (Channel channel: channels) {
             updatedChannels.add(new Channel(channel.getName(), channel.getDescription(), channel.getVendor(), createRepositories(repositories),
@@ -764,7 +768,7 @@ public class UpgradeComponentsMojo extends AbstractMojo {
         return updatedChannels;
     }
 
-    private List<Repository> createRepositories(List<String> userRepositories) {
+    private static List<Repository> createRepositories(List<String> userRepositories) {
         HashMap<String, Repository> result = new HashMap<>();
         int idx = 0;
         for (String input: userRepositories) {
@@ -785,13 +789,6 @@ public class UpgradeComponentsMojo extends AbstractMojo {
             }
         }
         return new ArrayList<>(result.values());
-    }
-
-    /**
-     * Returns PME representation of current project module and its submodules.
-     */
-    private List<Project> parsePmeProjects() throws ManipulationException {
-        return pomIO.parseProject(mavenProject.getModel().getPomFile());
     }
 
     /**

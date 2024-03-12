@@ -221,8 +221,8 @@ public class PomManipulator {
         sb.append("                <updatePolicy>always</updatePolicy>\n");
         sb.append("            </releases>\n");
         sb.append("            <snapshots>\n");
-        sb.append("                <enabled>false</enabled>\n");
-        sb.append("                <updatePolicy>never</updatePolicy>\n");
+        sb.append("                <enabled>true</enabled>\n");
+        sb.append("                <updatePolicy>always</updatePolicy>\n");
         sb.append("            </snapshots>\n");
         sb.append("        </repository>\n");
         return sb.toString();
