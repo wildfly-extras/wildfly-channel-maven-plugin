@@ -10,7 +10,7 @@
 
     <groupId>org.wildfly</groupId>
     <artifactId>wildfly-channel-tools-parent</artifactId>
-    <version>1.0.7</version>
+    <version>1.0.8-SNAPSHOT</version>
     <packaging>pom</packaging>
 
     <name>Wildfly Channel Tools - Root Project</name>
@@ -19,7 +19,7 @@
         <connection>scm:git:git@github.com:wildfly-extras/wildfly-channel-maven-plugin.git</connection>
         <developerConnection>scm:git:git@github.com:wildfly-extras/wildfly-channel-maven-plugin.git</developerConnection>
         <url>https://github.com/wildfly-extras/wildfly-channel-maven-plugin</url>
-        <tag>1.0.7</tag>
+        <tag>HEAD</tag>
     </scm>
     <distributionManagement>
         <repository>
