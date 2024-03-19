@@ -126,6 +126,14 @@ public class UpgradeComponentsMojo extends AbstractChannelMojo {
     List<String> ignoreStreams;
 
     /**
+     * Takes precedence over the ignoreStreams settings. One can use it to set "-DignoreStreams=org.wildfly.core:*" and
+     * "-DdontIgnoreStreams=org.wildfly.core:wildfly-core-parent" which would together ignore all org.wildfly.core:*
+     * streams except for org.wildfly.core:wildfly-core-parent.
+     */
+    @Parameter(property = "dontIgnoreStreams")
+    List<String> dontIgnoreStreams;
+
+    /**
      * Comma separated list of module G:As that should not be processed.
      */
     @Parameter(property = "ignoreModules")
@@ -223,6 +231,7 @@ public class UpgradeComponentsMojo extends AbstractChannelMojo {
     private List<Channel> channels = new ArrayList<>();
     private ChannelSession channelSession;
     private final List<ProjectRef> ignoredStreams = new ArrayList<>();
+    private final List<ProjectRef> unignoredStreams = new ArrayList<>();
     private final List<ProjectRef> ignoredModules = new ArrayList<>();
     private Set<ProjectVersionRef> projectGavs;
     private final HashMap<Pair<String, String>, PomManipulator> manipulators = new HashMap<>();
@@ -256,6 +265,7 @@ public class UpgradeComponentsMojo extends AbstractChannelMojo {
         channelSession = new ChannelSession(channels, new VersionResolverFactory(repositorySystem, repositorySystemSession));
 
         ignoreStreams.forEach(ga -> ignoredStreams.add(SimpleProjectRef.parse(ga)));
+        dontIgnoreStreams.forEach(ga -> unignoredStreams.add(SimpleProjectRef.parse(ga)));
         ignoreModules.forEach(ga -> ignoredModules.add(SimpleProjectRef.parse(ga)));
     }
 
@@ -469,8 +479,10 @@ public class UpgradeComponentsMojo extends AbstractChannelMojo {
                 })
                 .filter(entry -> {
                     ArtifactRef a = entry.getKey();
-                    return !(ignoredStreams.contains(new SimpleProjectRef(a.getGroupId(), a.getArtifactId()))
-                        || ignoredStreams.contains(new SimpleProjectRef(a.getGroupId(), "*")));
+                    boolean isIgnored = ignoredStreams.contains(a.asProjectRef())
+                            || ignoredStreams.contains(new SimpleProjectRef(a.getGroupId(), "*"));
+                    boolean isUnignored = unignoredStreams.contains(a.asProjectRef());
+                    return isUnignored || !isIgnored;
                 })
                 .collect(Collectors.toList());
         for (Map.Entry<ArtifactRef, Collection<ProjectRef>> entry : dependenciesToInject) {
@@ -594,16 +606,18 @@ public class UpgradeComponentsMojo extends AbstractChannelMojo {
                         + artifactRef.asProjectVersionRef().toString());
                 continue;
             }
-            if (ignoredStreams.contains(artifactRef.asProjectRef())) {
-                getLog().info("Skipping dependency (ignored stream): "
-                        + artifactRef.asProjectVersionRef().toString());
-                continue;
-            }
-            ProjectRef wildCardIgnoredProjectRef = new SimpleProjectRef(artifactRef.getGroupId(), "*");
-            if (ignoredStreams.contains(wildCardIgnoredProjectRef)) {
-                getLog().info("Skipping dependency (ignored stream): "
-                        + artifactRef.asProjectVersionRef().toString());
-                continue;
+            if (!unignoredStreams.contains(artifactRef.asProjectRef())) {
+                if (ignoredStreams.contains(artifactRef.asProjectRef())) {
+                    getLog().info("Skipping dependency (ignored stream): "
+                            + artifactRef.asProjectVersionRef().toString());
+                    continue;
+                }
+                ProjectRef wildCardIgnoredProjectRef = new SimpleProjectRef(artifactRef.getGroupId(), "*");
+                if (ignoredStreams.contains(wildCardIgnoredProjectRef)) {
+                    getLog().info("Skipping dependency (ignored stream): "
+                            + artifactRef.asProjectVersionRef().toString());
+                    continue;
+                }
             }
             if (artifactRef.getVersionString() == null) {
                 // this is not expected to happen
@@ -834,6 +848,9 @@ public class UpgradeComponentsMojo extends AbstractChannelMojo {
             managedDependencies.forEach(d -> artifactExclusions.put(toArtifactRef(d), toProjectRefs(d.getExclusions())));
         }
 
+        final List<ProjectRef> projectGAs = projectGavs.stream().map(ProjectRef::asProjectRef)
+                .collect(Collectors.toList());
+
         // This performs a traversal of a dependency tree of all submodules in the project. All discovered dependencies
         // that are not directly declared in the project are considered transitive dependencies.
         Map<ArtifactRef, Collection<ProjectRef>> undeclaredDependencies = new HashMap<>();
@@ -847,9 +864,15 @@ public class UpgradeComponentsMojo extends AbstractChannelMojo {
             visitor.getNodes().forEach(node -> {
                 ArtifactRef artifact = toArtifactRef(node.getArtifact());
                 Collection<ProjectRef> exclusions = artifactExclusions.get(artifact);
+                // Project modules should not be counted into undeclared dependencies.
+                if (projectGAs.contains(artifact.asProjectRef())) {
+                    return;
+                }
+                // Declared project dependencies should not be counted as undeclared.
                 if (declaredDependencies.contains(artifact.asProjectRef())) {
                     return;
                 }
+                // Ignore test scope dependencies.
                 if ("test".equals(node.getArtifact().getScope()) && ignoreTestDependencies) {
                     // Ignore test scope undeclared dependencies entirely.
                     return;
