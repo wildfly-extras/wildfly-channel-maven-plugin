@@ -92,6 +92,25 @@ public class InjectRepositoriesMojo extends AbstractChannelMojo {
                         logger.infof("Repository with URL %s is already present.", r.getUrl());
                     }
                 });
+
+        Set<String> existingPluginRepositories = project.getModel().getPluginRepositories().stream()
+                .map(RepositoryBase::getUrl)
+                .collect(Collectors.toSet());
+
+        channels.stream()
+                .flatMap(c -> c.getRepositories().stream()).distinct()
+                .forEach(r -> {
+                    if (!existingPluginRepositories.contains(r.getUrl())) {
+                        try {
+                            logger.infof("Inserting repository %s", r.getUrl());
+                            manipulator.injectPluginRepository(r.getId(), r.getUrl());
+                        } catch (XMLStreamException e) {
+                            ChannelPluginLogger.LOGGER.errorf("Failed to inject repository: %s", e.getMessage());
+                        }
+                    } else {
+                        logger.infof("Repository with URL %s is already present.", r.getUrl());
+                    }
+                });
     }
 
 }

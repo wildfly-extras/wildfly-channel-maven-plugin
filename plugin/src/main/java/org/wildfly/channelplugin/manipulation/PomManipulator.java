@@ -26,8 +26,10 @@ public class PomManipulator {
 
     private static final String DEPENDENCY_MANAGEMENT_PATH = "/project/dependencyManagement/dependencies";
     private static final String REPOSITORIES_PATH = "/project/repositories";
+    private static final String PLUGIN_REPOSITORIES_PATH = "/project/pluginRepositories";
     private static final String DEPENDENCIES = "dependencies";
     private static final String REPOSITORIES = "repositories";
+    private static final String PLUGIN_REPOSITORIES = "pluginRepositories";
 
     private final Project project;
     private final ModifiedPomXMLEventReader eventReader;
@@ -85,6 +87,34 @@ public class PomManipulator {
                     eventReader.mark(0);
                     eventReader.replaceMark(0, composeRepositoryElementString(id, url)
                             + "    </repositories>"
+                    );
+                    eventReader.clearMark(0);
+                    break;
+                }
+
+                path = stack.pop();
+            }
+        }
+    }
+
+    public void injectPluginRepository(String id, String url) throws XMLStreamException {
+        eventReader.rewind();
+
+        Stack<String> stack = new Stack<String>();
+        String path = "";
+
+        while (eventReader.hasNext()) {
+            XMLEvent event = eventReader.nextEvent();
+            if (event.isStartElement()) {
+                stack.push(path);
+                path = path + "/" + event.asStartElement().getName().getLocalPart();
+            } else if (event.isEndElement()) {
+                // replaces "</repositories>" end element with new repository + the end element
+                String elementName = event.asEndElement().getName().getLocalPart();
+                if (elementName.equals(PLUGIN_REPOSITORIES) && path.equals(PLUGIN_REPOSITORIES_PATH)) {
+                    eventReader.mark(0);
+                    eventReader.replaceMark(0, composePluginRepositoryElementString(id, url)
+                            + "    </pluginRepositories>"
                     );
                     eventReader.clearMark(0);
                     break;
@@ -210,7 +240,6 @@ public class PomManipulator {
         return sb.toString();
     }
 
-
     private static String composeRepositoryElementString(String id, String url) {
         StringBuilder sb = new StringBuilder();
         sb.append("    <repository>\n");
@@ -225,6 +254,23 @@ public class PomManipulator {
         sb.append("                <updatePolicy>always</updatePolicy>\n");
         sb.append("            </snapshots>\n");
         sb.append("        </repository>\n");
+        return sb.toString();
+    }
+
+    private static String composePluginRepositoryElementString(String id, String url) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("    <pluginRepository>\n");
+        sb.append(String.format("            <id>%s</id>\n", id));
+        sb.append(String.format("            <url>%s</url>\n", url));
+        sb.append("            <releases>\n");
+        sb.append("                <enabled>true</enabled>\n");
+        sb.append("                <updatePolicy>always</updatePolicy>\n");
+        sb.append("            </releases>\n");
+        sb.append("            <snapshots>\n");
+        sb.append("                <enabled>true</enabled>\n");
+        sb.append("                <updatePolicy>always</updatePolicy>\n");
+        sb.append("            </snapshots>\n");
+        sb.append("        </pluginRepository>\n");
         return sb.toString();
     }
 
