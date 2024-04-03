@@ -1,0 +1,6 @@
+schemaVersion: 1.0.0
+name: Sample Manifest
+streams:
+  - groupId: io.undertow
+    artifactId: undertow-core
+    version: "2.2.5.Final-redhat-00001"

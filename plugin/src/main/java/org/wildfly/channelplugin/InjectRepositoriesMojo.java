@@ -2,15 +2,19 @@ package org.wildfly.channelplugin;
 
 import org.apache.maven.execution.MavenSession;
 import org.apache.maven.model.RepositoryBase;
+import org.apache.maven.plugin.AbstractMojo;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugins.annotations.Mojo;
 import org.apache.maven.plugins.annotations.Parameter;
+import org.apache.maven.project.MavenProject;
 import org.commonjava.maven.ext.common.ManipulationException;
 import org.commonjava.maven.ext.common.model.Project;
+import org.commonjava.maven.ext.io.PomIO;
 import org.jboss.logging.Logger;
 import org.wildfly.channel.Channel;
 import org.wildfly.channel.ChannelMapper;
 import org.wildfly.channelplugin.manipulation.PomManipulator;
+import org.wildfly.channelplugin.utils.PMEUtils;
 
 import javax.inject.Inject;
 import javax.xml.stream.XMLStreamException;
@@ -26,8 +30,8 @@ import java.util.stream.Collectors;
  * This Mojo takes a channel file, extracts Maven repositories used by channels in the file, and injects those
  * repositories into the project POM, so that Maven would use them to download dependencies from.
  */
-@Mojo(name = "inject-repositories", requiresProject = true, requiresDirectInvocation = true)
-public class InjectRepositoriesMojo extends AbstractChannelMojo {
+@Mojo(name = "inject-repositories", requiresDirectInvocation = true)
+public class InjectRepositoriesMojo extends AbstractMojo {
 
     private static final Logger logger = Logger.getLogger(InjectRepositoriesMojo.class);
 
@@ -39,6 +43,12 @@ public class InjectRepositoriesMojo extends AbstractChannelMojo {
 
     @Inject
     MavenSession mavenSession;
+
+    @Inject
+    PomIO pomIO;
+
+    @Inject
+    MavenProject mavenProject;
 
     @Override
     public void execute() throws MojoExecutionException {
@@ -61,8 +71,8 @@ public class InjectRepositoriesMojo extends AbstractChannelMojo {
         }
 
         try {
-            List<Project> projects = parsePmeProjects();
-            Project rootProject = findRootProject(projects);
+            List<Project> projects = PMEUtils.parsePmeProjects(pomIO, mavenProject);
+            Project rootProject = PMEUtils.findRootProject(projects);
             getLog().info("Root project: " + rootProject.getArtifactId());
             PomManipulator manipulator = new PomManipulator(rootProject);
             insertRepositories(rootProject, manipulator, channels);

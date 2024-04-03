@@ -58,34 +58,38 @@ class MojoConfigurator {
             return; // Nothing to do
         }
 
-        ClassInfo classInfo = index.getClassByName(mojo.getClass());
+        Class<?> aClass = mojo.getClass();
+        while (aClass != null && !aClass.equals(Object.class)) {
+            ClassInfo classInfo = index.getClassByName(aClass);
+            if (classInfo != null) {
+                for (FieldInfo fieldInfo : classInfo.fields()) {
+                    try {
+                        AnnotationInstance annotation = fieldInfo.annotation(PROPERTY_ANNOTATION_NAME);
+                        if (annotation != null) {
+                            Field field = aClass.getDeclaredField(fieldInfo.name());
+                            Object currentValue = field.get(mojo);
+                            String preconfiguredValue = preconfiguredParameters.get(annotation.value("property").asString());
 
-        for (FieldInfo fieldInfo: classInfo.fields()) {
-            try {
-                AnnotationInstance annotation = fieldInfo.annotation(PROPERTY_ANNOTATION_NAME);
-                if (annotation != null) {
-                    Field field = mojo.getClass().getDeclaredField(fieldInfo.name());
-                    Object currentValue = field.get(mojo);
-                    String preconfiguredValue = preconfiguredParameters.get(annotation.value("property").asString());
-
-
-                    if (preconfiguredValue != null && isDefaultValue(currentValue, annotation)) {
-                        if (field.getType().equals(String.class)) {
-                            field.set(mojo, preconfiguredValue);
-                        } else if (field.getType().equals(boolean.class)) {
-                            field.set(mojo, Boolean.valueOf(preconfiguredValue));
-                        } else if (field.getType().equals(List.class)) {
-                            field.set(mojo, Arrays.asList(preconfiguredValue.split(",")));
-                        } else {
-                            throw new NotImplementedException("Don't know how to handle this type: " + field.getType());
+                            if (preconfiguredValue != null && isDefaultValue(currentValue, annotation)) {
+                                if (field.getType().equals(String.class)) {
+                                    field.set(mojo, preconfiguredValue);
+                                } else if (field.getType().equals(boolean.class)) {
+                                    field.set(mojo, Boolean.valueOf(preconfiguredValue));
+                                } else if (field.getType().equals(List.class)) {
+                                    field.set(mojo, Arrays.asList(preconfiguredValue.split(",")));
+                                } else {
+                                    throw new NotImplementedException("Don't know how to handle this type: " + field.getType());
+                                }
+                            }
                         }
+                    } catch (IllegalAccessException e) {
+                        mojo.getLog().error(e.getMessage(), e);
+                    } catch (NoSuchFieldException e) {
+                        mojo.getLog().error("Field not found: " + fieldInfo.name(), e);
                     }
                 }
-            } catch (IllegalAccessException e) {
-                mojo.getLog().error(e.getMessage(), e);
-            } catch (NoSuchFieldException e) {
-                mojo.getLog().error("Field not found: " + fieldInfo.name(), e);
             }
+            aClass = aClass.getSuperclass();
         }
     }
 
