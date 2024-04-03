@@ -35,6 +35,8 @@ public class InjectRepositoriesMojo extends AbstractMojo {
 
     private static final Logger logger = Logger.getLogger(InjectRepositoriesMojo.class);
 
+    private static final String CENTRAL_URL = "https://repo.maven.apache.org/maven2";
+
     /**
      * Channel file path to extract repositories from.
      */
@@ -87,9 +89,11 @@ public class InjectRepositoriesMojo extends AbstractMojo {
         Set<String> existingRepositories = project.getModel().getRepositories().stream()
                 .map(RepositoryBase::getUrl)
                 .collect(Collectors.toSet());
+        existingRepositories.add(CENTRAL_URL);
 
         channels.stream()
-                .flatMap(c -> c.getRepositories().stream()).distinct()
+                .flatMap(c -> c.getRepositories().stream())
+                .distinct()
                 .forEach(r -> {
                     if (!existingRepositories.contains(r.getUrl())) {
                         try {
@@ -106,6 +110,7 @@ public class InjectRepositoriesMojo extends AbstractMojo {
         Set<String> existingPluginRepositories = project.getModel().getPluginRepositories().stream()
                 .map(RepositoryBase::getUrl)
                 .collect(Collectors.toSet());
+        existingPluginRepositories.add(CENTRAL_URL);
 
         channels.stream()
                 .flatMap(c -> c.getRepositories().stream()).distinct()
