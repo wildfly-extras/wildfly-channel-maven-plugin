@@ -132,6 +132,10 @@ public class CreateManifestMojo extends AbstractMojo {
             final String manifestFileName = String.format("%s-%s-%s.%s",
                     project.getArtifactId(), project.getVersion(),
                     ChannelManifest.CLASSIFIER, ChannelManifest.EXTENSION);
+            final Path outputDirectory = Path.of(project.getBuild().getDirectory());
+            if (!Files.exists(outputDirectory)) {
+                Files.createDirectory(outputDirectory);
+            }
             final Path outputPath = Path.of(project.getBuild().getDirectory(), manifestFileName);
             Files.writeString(outputPath, yaml, StandardCharsets.UTF_8);
             projectHelper.attachArtifact(project, ChannelManifest.EXTENSION, ChannelManifest.CLASSIFIER, outputPath.toFile());
