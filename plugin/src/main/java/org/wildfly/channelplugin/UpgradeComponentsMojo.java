@@ -1,6 +1,7 @@
 package org.wildfly.channelplugin;
 
 import org.apache.commons.lang3.tuple.Pair;
+import org.apache.maven.artifact.versioning.DefaultArtifactVersion;
 import org.apache.maven.model.Dependency;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugins.annotations.Mojo;
@@ -12,6 +13,8 @@ import org.apache.maven.shared.dependency.graph.DependencyGraphBuilder;
 import org.apache.maven.shared.dependency.graph.DependencyGraphBuilderException;
 import org.apache.maven.shared.dependency.graph.DependencyNode;
 import org.apache.maven.shared.dependency.graph.traversal.CollectingDependencyNodeVisitor;
+import org.codehaus.mojo.versions.ordering.MavenVersionComparator;
+import org.codehaus.mojo.versions.ordering.VersionComparator;
 import org.commonjava.maven.atlas.ident.ref.ArtifactRef;
 import org.commonjava.maven.atlas.ident.ref.ProjectRef;
 import org.commonjava.maven.atlas.ident.ref.ProjectVersionRef;
@@ -21,6 +24,7 @@ import org.commonjava.maven.atlas.ident.ref.SimpleProjectVersionRef;
 import org.commonjava.maven.ext.common.ManipulationException;
 import org.commonjava.maven.ext.common.model.Project;
 import org.commonjava.maven.ext.core.ManipulationSession;
+import org.wildfly.channel.NoStreamFoundException;
 import org.wildfly.channel.UnresolvedMavenArtifactException;
 import org.wildfly.channel.VersionResult;
 import org.wildfly.channelplugin.manipulation.PomManipulator;
@@ -33,6 +37,8 @@ import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -55,6 +61,8 @@ import static org.wildfly.channeltools.util.ConversionUtils.toProjectRefs;
  */
 @Mojo(name = "upgrade", requiresDirectInvocation = true)
 public class UpgradeComponentsMojo extends AbstractChannelMojo {
+
+    private final static VersionComparator VERSION_COMPARATOR = new MavenVersionComparator();
 
     /**
      * Comma separated list of dependency G:As that should not be upgraded.
@@ -121,20 +129,6 @@ public class UpgradeComponentsMojo extends AbstractChannelMojo {
     @Parameter(property = "injectTransitiveDependencies", defaultValue = "true")
     boolean injectTransitiveDependencies;
 
-    /**
-     * When injecting new dependency elements (to override transitive dependency versions), add exclussions according to given
-     * project submodule (given in G:A format).
-     * <p>
-     * Effectively, this means that when a transitive dependency G:A:V is going to be injected to override the dependency version,
-     * the plugin will try to find this same dependency in a dependency tree of a given submodule and copy exclusions it finds
-     * there to the injected dependency element.
-     * <p>
-     * If this parameter is unset, the dependency exclusions are taken from managed dependencies section of the root module
-     * effective POM.
-     */
-    @Parameter(property = "copyExclusionsFrom")
-    String copyExclusionsFrom;
-
     @Parameter(property = "ignoreTestDependencies", defaultValue = "true")
     boolean ignoreTestDependencies;
 
@@ -164,6 +158,7 @@ public class UpgradeComponentsMojo extends AbstractChannelMojo {
     private final List<ProjectRef> ignoredModules = new ArrayList<>();
     private Set<ProjectVersionRef> projectGavs;
     private final HashMap<Pair<String, String>, PomManipulator> manipulators = new HashMap<>();
+    private PomManipulator rootManipulator;
     private final HashMap<Pair<Project, String>, String> upgradedProperties = new HashMap<>();
     private final Set<ProjectRef> declaredDependencies = new HashSet<>();
 
@@ -227,14 +222,15 @@ public class UpgradeComponentsMojo extends AbstractChannelMojo {
                 processModule(project, manipulator);
             }
 
+            Project rootProject = PMEUtils.findRootProject(pmeProjects);
+            rootManipulator = manipulators.get(Pair.of(rootProject.getGroupId(), rootProject.getArtifactId()));
+
             if (injectTransitiveDependencies) {
                 injectTransitiveDependencies();
             }
 
             // if channel was given as an input, insert channel repositories into the parent pom
             if (injectRepositories) {
-                Project rootProject = PMEUtils.findRootProject(pmeProjects);
-                PomManipulator rootManipulator = manipulators.get(Pair.of(rootProject.getGroupId(), rootProject.getArtifactId()));
                 InjectRepositoriesMojo.insertRepositories(rootProject, rootManipulator, channels);
             }
 
@@ -311,7 +307,7 @@ public class UpgradeComponentsMojo extends AbstractChannelMojo {
                 }
 
                 if (upgradedProperties.containsKey(projectProperty)) {
-                    if (!upgradedProperties.get(projectProperty).equals(newVersion)) {
+                    if (!upgradedProperties.get(projectProperty).trim().equals(newVersion.trim())) {
                         // property has already been changed to different value
                         String propertyName = projectProperty.getRight();
                         String currentPropertyValue = upgradedProperties.get(projectProperty);
@@ -358,59 +354,6 @@ public class UpgradeComponentsMojo extends AbstractChannelMojo {
             }
         }
 
-    }
-
-    /**
-     * Injects all transitive dependencies that are present in channels into parent POM's dependencyManagement section.
-     * <p>
-     * Call this method after all modules has been processed via the `processModule()` method.
-     */
-    private void injectTransitiveDependencies() throws DependencyGraphBuilderException, XMLStreamException {
-        PomManipulator rootManipulator = manipulators.get(
-                Pair.of(mavenProject.getGroupId(), mavenProject.getArtifactId()));
-        // (dependency => exclusions list) map of undeclared dependencies
-        Map<ArtifactRef, Collection<ProjectRef>> undeclaredDependencies = collectUndeclaredDependencies();
-
-        List<Map.Entry<ArtifactRef, Collection<ProjectRef>>> dependenciesToInject = undeclaredDependencies.entrySet().stream()
-                .sorted((e1, e2) -> e1.getKey().compareTo(e2.getKey()))
-                // filter only deps that have a stream defined in the channel
-                .filter(entry -> {
-                    // verify if the artifact from the project dependency tree is modified by the channel
-                    ArtifactRef a = entry.getKey();
-                    try {
-                        VersionResult versionResult = channelSession.findLatestMavenArtifactVersion(a.getGroupId(), a.getArtifactId(),
-                                a.getType(), a.getClassifier(), a.getVersionString());
-                        return !versionResult.getVersion().equals(a.getVersionString());
-                    } catch (UnresolvedMavenArtifactException e) {
-                        // no stream found -> no change
-                        return false;
-                    }
-                })
-                .filter(entry -> {
-                    ArtifactRef a = entry.getKey();
-                    boolean isIgnored = ignoredStreams.contains(a.asProjectRef())
-                            || ignoredStreams.contains(new SimpleProjectRef(a.getGroupId(), "*"));
-                    boolean isUnignored = unignoredStreams.contains(a.asProjectRef());
-                    return isUnignored || !isIgnored;
-                })
-                .collect(Collectors.toList());
-        for (Map.Entry<ArtifactRef, Collection<ProjectRef>> entry : dependenciesToInject) {
-            ArtifactRef a = entry.getKey();
-            try {
-                VersionResult versionResult = channelSession.findLatestMavenArtifactVersion(a.getGroupId(), a.getArtifactId(),
-                        a.getType(), a.getClassifier(), a.getVersionString());
-                String newVersion = versionResult.getVersion();
-                if (!newVersion.equals(a.getVersionString())) {
-                    SimpleArtifactRef newDependency = new SimpleArtifactRef(a.getGroupId(), a.getArtifactId(), newVersion,
-                            a.getType(), a.getClassifier());
-                    getLog().info(String.format("Injecting undeclared dependency: %s (original version was %s)", newDependency,
-                            a.getVersionString()));
-                    rootManipulator.injectManagedDependency(newDependency, entry.getValue());
-                }
-            } catch (UnresolvedMavenArtifactException e) {
-                getLog().error(String.format("Unable to resolve dependency %s", a));
-            }
-        }
     }
 
     /**
@@ -559,7 +502,7 @@ public class UpgradeComponentsMojo extends AbstractChannelMojo {
                         artifactRef.getVersionString());
                 String channelVersion = versionResult.getVersion();
 
-                if (!channelVersion.equals(artifactRef.getVersionString())) {
+                if (compareVersions(channelVersion, artifactRef.getVersionString()) > 0) {
                     getLog().info("Updating dependency " + artifactRef.getGroupId()
                             + ":" + artifactRef.getArtifactId() + ":" + artifactRef.getVersionString()
                             + " to version " + channelVersion);
@@ -575,55 +518,25 @@ public class UpgradeComponentsMojo extends AbstractChannelMojo {
     }
 
     /**
-     * Collects transitive dependencies from all project's modules, which are not declared in the project.
+     * Overrides versions of transitive dependencies in all project's modules.
      * <p>
      * This has to be called after all submodules has been processed (so that all declared dependencies has been
      * collected).
-     *
-     * @return a map containing a dependencies as keys and list of exclusions as values.
      */
-    private Map<ArtifactRef, Collection<ProjectRef>> collectUndeclaredDependencies() throws DependencyGraphBuilderException {
-        Map<ArtifactRef, Collection<ProjectRef>> artifactExclusions = new HashMap<>();
-
-        // First of all, if `copyExclusionsFrom` module has been set, we are going to remember exclusions from all dependencies
-        // of this module. These exclusions will be used for the newly injected dependency elements.
-
-        // First of all, we want to collect information about exclusions for the dependencies that are eventually going to be
-        // injected into the project. There are two possible strategies:
-        if (copyExclusionsFrom != null) {
-            // Either collect the exclusions from a dependency tree of a project submodule that a user specified.
-            ProjectRef exclusionsModule = SimpleProjectRef.parse(copyExclusionsFrom);
-            Optional<MavenProject> exclusionsProject = mavenProject.getCollectedProjects().stream()
-                    .filter(p -> exclusionsModule.getGroupId().equals(p.getGroupId())
-                             && exclusionsModule.getArtifactId().equals(p.getArtifactId()))
-                    .findFirst();
-            if (exclusionsProject.isPresent()) {
-                ProjectBuildingRequest buildingRequest = new DefaultProjectBuildingRequest(mavenSession.getProjectBuildingRequest());
-                buildingRequest.setProject(exclusionsProject.get());
-                DependencyNode rootNode = dependencyGraphBuilder.buildDependencyGraph(buildingRequest, null);
-                CollectingDependencyNodeVisitor visitor = new CollectingDependencyNodeVisitor();
-                rootNode.accept(visitor);
-                visitor.getNodes().forEach(node -> {
-                    HashSet<ProjectRef> exclusionSet = new HashSet<>(toProjectRefs(node.getExclusions()));
-                    Collection<ProjectRef> previousExclusions = artifactExclusions.put(toArtifactRef(node.getArtifact()), exclusionSet);
-                    if (previousExclusions != null) {
-                        exclusionSet.addAll(previousExclusions);
-                    }
-                });
-            }
-        } else {
-            // Or else collect the exclusions from a dependency management section of an effective POM of the root module.
-            List<Dependency> managedDependencies = mavenProject.getModel().getDependencyManagement().getDependencies();
-            managedDependencies.forEach(d -> artifactExclusions.put(toArtifactRef(d), toProjectRefs(d.getExclusions())));
-        }
-
+    private void injectTransitiveDependencies() throws DependencyGraphBuilderException {
         final List<ProjectRef> projectGAs = projectGavs.stream().map(ProjectRef::asProjectRef)
                 .collect(Collectors.toList());
 
         // This performs a traversal of a dependency tree of all submodules in the project. All discovered dependencies
         // that are not directly declared in the project are considered transitive dependencies.
-        Map<ArtifactRef, Collection<ProjectRef>> undeclaredDependencies = new HashMap<>();
+        Map<ArtifactRef, Collection<ProjectRef>> dependenciesToInject = new HashMap<>();
         for (MavenProject module: mavenProject.getCollectedProjects()) {
+
+            // Collect exclusions from the effective POM
+            Map<ArtifactRef, Collection<ProjectRef>> artifactExclusions = new HashMap<>();
+            List<Dependency> managedDependencies = module.getModel().getDependencyManagement().getDependencies();
+            managedDependencies.forEach(dep -> artifactExclusions.put(toArtifactRef(dep), toProjectRefs(dep.getExclusions())));
+
             ProjectBuildingRequest buildingRequest =
                     new DefaultProjectBuildingRequest(mavenSession.getProjectBuildingRequest());
             buildingRequest.setProject(module);
@@ -632,7 +545,6 @@ public class UpgradeComponentsMojo extends AbstractChannelMojo {
             rootNode.accept(visitor);
             visitor.getNodes().forEach(node -> {
                 ArtifactRef artifact = toArtifactRef(node.getArtifact());
-                Collection<ProjectRef> exclusions = artifactExclusions.get(artifact);
                 // Project modules should not be counted into undeclared dependencies.
                 if (projectGAs.contains(artifact.asProjectRef())) {
                     return;
@@ -646,10 +558,51 @@ public class UpgradeComponentsMojo extends AbstractChannelMojo {
                     // Ignore test scope undeclared dependencies entirely.
                     return;
                 }
-                undeclaredDependencies.put(artifact, exclusions);
+                // Check if the dependency channel stream is configured as ignored.
+                boolean isIgnored = ignoredStreams.contains(artifact.asProjectRef())
+                        || ignoredStreams.contains(new SimpleProjectRef(artifact.getGroupId(), "*"));
+                boolean isUnignored = unignoredStreams.contains(artifact.asProjectRef());
+                if (isIgnored && !isUnignored) {
+                    return;
+                }
+
+                Collection<ProjectRef> exclusions = artifactExclusions.getOrDefault(artifact, Collections.emptyList());
+                Collection<ProjectRef> existingExclusions = dependenciesToInject.computeIfAbsent(artifact, a -> new HashSet<>());
+                existingExclusions.addAll(exclusions);
             });
         }
-        return undeclaredDependencies;
+
+        dependenciesToInject.entrySet().stream()
+                .sorted(Map.Entry.comparingByKey())
+                .forEachOrdered(entry -> {
+            ArtifactRef artifact = entry.getKey();
+            Collection<ProjectRef> exclusions = entry.getValue();
+            String newVersion;
+            try {
+                // Check if the dependency is updated by the channel.
+                VersionResult versionResult = channelSession.findLatestMavenArtifactVersion(artifact.getGroupId(),
+                        artifact.getArtifactId(), artifact.getType(), artifact.getClassifier(), artifact.getVersionString());
+                newVersion = versionResult.getVersion();
+                if (compareVersions(newVersion, artifact.getVersionString()) <= 0) {
+                    return;
+                }
+            } catch (NoStreamFoundException e) {
+                // No stream found -> dependency remains the same.
+                return;
+            }
+
+            SimpleArtifactRef newDependency = new SimpleArtifactRef(artifact.getGroupId(), artifact.getArtifactId(),
+                    newVersion, artifact.getType(), artifact.getClassifier());
+            getLog().info(String.format("Injecting undeclared dependency: %s (original version was %s)", newDependency,
+                    artifact.getVersionString()));
+
+            try {
+                rootManipulator.injectManagedDependency(newDependency, exclusions, artifact.getVersionString());
+            } catch (XMLStreamException e) {
+                throw new RuntimeException("Failed to inject a managed dependency", e);
+            }
+        });
+
     }
 
     /**
@@ -712,4 +665,7 @@ public class UpgradeComponentsMojo extends AbstractChannelMojo {
         }
     }
 
+    private static int compareVersions(String v1, String v2) {
+        return VERSION_COMPARATOR.compare(new DefaultArtifactVersion(v1.trim()), new DefaultArtifactVersion(v2.trim()));
+    }
 }

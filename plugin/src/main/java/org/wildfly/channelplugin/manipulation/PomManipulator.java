@@ -65,8 +65,9 @@ public class PomManipulator {
         return PomHelper.setPropertyVersion(eventReader, null, propertyName, propertyValue);
     }
 
-    public void injectManagedDependency(ArtifactRef dependency, Collection<ProjectRef> exclusions) throws XMLStreamException {
-        injectManagedDependency(eventReader, dependency, exclusions);
+    public void injectManagedDependency(ArtifactRef dependency, Collection<ProjectRef> exclusions, String oldVersion)
+            throws XMLStreamException {
+        injectManagedDependency(eventReader, dependency, exclusions, oldVersion);
     }
 
     public void injectRepository(String id, String url) throws XMLStreamException {
@@ -155,7 +156,7 @@ public class PomManipulator {
      * The dependencyManagement section must be already present in the POM.
      */
     static void injectManagedDependency(ModifiedPomXMLEventReader eventReader, ArtifactRef dependency,
-            Collection<ProjectRef> exclusions) throws XMLStreamException {
+            Collection<ProjectRef> exclusions, String oldVersion) throws XMLStreamException {
         eventReader.rewind();
 
         Stack<String> stack = new Stack<>();
@@ -170,7 +171,7 @@ public class PomManipulator {
                 if (event.asEndElement().getName().getLocalPart().equals(DEPENDENCIES)
                         && path.equals(DEPENDENCY_MANAGEMENT_PATH)) {
                     eventReader.mark(0);
-                    eventReader.replaceMark(0, composeDependencyElementString(dependency, exclusions)
+                    eventReader.replaceMark(0, composeDependencyElementString(dependency, exclusions, oldVersion)
                                     + "        </dependencies>"
                     );
                     eventReader.clearMark(0);
@@ -214,12 +215,12 @@ public class PomManipulator {
         }
     }
 
-    private static String composeDependencyElementString(ArtifactRef artifact, Collection<ProjectRef> exclusions) {
+    private static String composeDependencyElementString(ArtifactRef artifact, Collection<ProjectRef> exclusions, String oldVersion) {
         StringBuilder sb = new StringBuilder();
         sb.append("    <dependency>\n");
         sb.append(String.format("                <groupId>%s</groupId>\n", artifact.getGroupId()));
         sb.append(String.format("                <artifactId>%s</artifactId>\n", artifact.getArtifactId()));
-        sb.append(String.format("                <version>%s</version>\n", artifact.getVersionString()));
+        sb.append(String.format("                <version>%s</version> <!-- originally %s -->\n", artifact.getVersionString(), oldVersion));
         if (artifact.getClassifier() != null) {
             sb.append(String.format("                <classifier>%s</classifier>\n", artifact.getClassifier()));
         }
