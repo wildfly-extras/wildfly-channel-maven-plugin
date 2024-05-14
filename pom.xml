@@ -186,6 +186,13 @@
                 <version>3.2.0</version>
             </dependency>
 
+            <!-- Table formatting -->
+            <dependency>
+                <groupId>hu.vissy.plain-text-table</groupId>
+                <artifactId>ptt-core</artifactId>
+                <version>3.0.0</version>
+            </dependency>
+
             <!-- Testing -->
             <dependency>
                 <groupId>org.junit.jupiter</groupId>

@@ -20,6 +20,7 @@ The plugin is not able to align dependencies when:
 
 * [`upgrade`](#upgrade)
 * [`inject-repositories`](#inject-repositories)
+* [`verify-dependencies`](#verify-dependencies)
 
 ### `upgrade`
 
@@ -31,19 +32,17 @@ Example:
 
 #### Parameters
 
-Channel location parameters - exactly one of these has to be given:
+Channel location parameters:
 
 * `channelFile`: Path to a Wildfly Channel file on a local filesystem.
 * `channelGAV`: Alternative to above, the channel file would be obtained from a maven repo.
 * `manifestFile`: Path to a Wildfly Channel manifest file on a local filesystem.
 * `manifestGAV`: Alternative to above, the manifest file would be obtained from a maven repo.
+* `remoteRepositories`: Comma delimited list of remote repositories used by the channel session.
 
 Additional configuration - all of these are optional:
 
 * `localRepository`: Local maven repository path. Defaults to `~/.m2/repository`.
-* `remoteRepositories`: Comma delimited list of remote repositories, which will be used for resolution of available 
-  dependency versions. This is only needed when working with channel containing version patterns (final dependency 
-  version is determined dynamically according to what versions are available in given remote Maven repositories).
 * `ignoreStreams`: Comma delimited list of "groupId:artifactId" strings (can be also "groupId:*"), representing
   dependencies that should not be modified.
 * `ignoreProperties`: Comma delimited list of property names in the project that should not be modified.
@@ -81,6 +80,37 @@ Example:
 
 * `fromChannelFile`: Channel file to extract repositories from.
 
+### `verify-dependencies`
+
+Checks that all project dependencies are aligned with specified channel, otherwise fails the build.
+
+#### Parameters
+
+Channel location parameters:
+
+* `channelFile`: Path to a Wildfly Channel file on a local filesystem.
+* `channelGAV`: Alternative to above, the channel file would be obtained from a maven repo.
+* `manifestFile`: Path to a Wildfly Channel manifest file on a local filesystem.
+* `manifestGAV`: Alternative to above, the manifest file would be obtained from a maven repo.
+* `remoteRepositories`: Comma delimited list of remote repositories used by the channel session.
+
+Other parameters:
+
+* `failBuild`: Should the build fail in case unaligned dependencies are found? Defaults to true.
+* `failWhenStreamNotFound`: Should the build fail in case when dependencies are found that are not represented in 
+  specified channels? Defaults to false.
+* `ignoreStreams`: Comma delimited list of dependencies GAs that should be ignored - build will not fail even if these
+  are unaligned.
+* `ignoreScopes`: Comma delimited list of scopes that should be ignored, meaning dependencies belonging to given scopes
+  will not be checked. Defaults to "test".
+
+Example:
+
+```shell
+mvn clean org.wildfly:wildfly-channel-maven-plugin:1.0.13-SNAPSHOT:verify-dependencies \
+    -DmanifestGAV=org.jboss.eap.channels:eap-xp-5.0
+```
+  
 ## Static Configuration
 
 Configuration parameters can be stored in a file `.wildfly-channel-maven-plugin` located in the root of the project 
