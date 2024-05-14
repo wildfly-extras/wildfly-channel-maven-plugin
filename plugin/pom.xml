@@ -142,6 +142,11 @@
             <artifactId>maven-dependency-tree</artifactId>
         </dependency>
 
+        <dependency>
+            <groupId>hu.vissy.plain-text-table</groupId>
+            <artifactId>ptt-core</artifactId>
+        </dependency>
+
         <!-- Testing -->
         <dependency>
             <groupId>org.junit.jupiter</groupId>
