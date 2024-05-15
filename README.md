@@ -67,12 +67,44 @@ Additional configuration - all of these are optional:
   the real dependency tree into account, when figuring out which dependencies to inject.
 -->
 
+#### Examples
+
+Align all dependencies according to a channel file:
+
+```shell
+# navigate to a maven project
+cd some-maven-project/
+
+# execute the plugin
+mvn org.wildfly:wildfly-channel-maven-plugin:upgrade \
+   -DchannelFile=<path/to/channel.yaml>
+
+# review changes
+git diff
+```
+
+More complex use case:
+
+* override the "version.dep1" property to "1.0.2",
+* suppress any changes in properties that start with the "legacy." string,
+* do not process the "project.group:submodule1" submodule (no changes will be made to that `pom.xml`),
+* align all remaining dependencies, not affected by above rules, to versions defined in given channel file.
+
+```shell
+mvn org.wildfly:wildfly-channel-maven-plugin:upgrade \
+   -DchannelFile=<path/to/channel.yaml> \
+   -DoverrideProperties=version.dep1=1.0.2 \
+   -DignorePropertiesPrefixedWith=legacy. \
+   -DignoreModules=project.group:submodule1
+```
+See additional examples, including sample files, in the [examples](examples/README.md) directory.
+
 ### `inject-repositories`
 
 Extracts repositories from given channel file, and adds these repositories to the project POM. The project build should
 then have access to all the repositories that the channel file references. 
 
-Example:
+#### Example
 
 `mvn org.wildfly:wildfly-channel-maven-plugin:inject-repositories -DfromChannelFile=channel.yaml`
 
@@ -104,11 +136,40 @@ Other parameters:
 * `ignoreScopes`: Comma delimited list of scopes that should be ignored, meaning dependencies belonging to given scopes
   will not be checked. Defaults to "test".
 
-Example:
+#### Example
 
 ```shell
 mvn clean org.wildfly:wildfly-channel-maven-plugin:1.0.13-SNAPSHOT:verify-dependencies \
     -DmanifestGAV=org.jboss.eap.channels:eap-xp-5.0
+```
+
+If a mismatch is detected in the alignment, build fails and following reports are generated:
+
+```shell
+$ cat target/wildfly-channel-reports/unaligned-dependencies.txt 
+--------------------------------------------------------------------------------
+ Following dependencies are not aligned with specified channels                 
+--------------------------------------------------------------------------------
+ Dependency                                            Expected Version         
+----------------------------------------------------- --------------------------
+ org.jboss.logging:jboss-logging:3.4.3.Final           3.4.3.Final-redhat-00001 
+ org.slf4j:jcl-over-slf4j:2.0.7                        2.0.7.redhat-00002       
+ org.jboss.galleon:galleon-core:5.1.2.Final            5.1.2.Final-redhat-00001 
+ ...
+--------------------------------------------------------------------------------
+```
+```shell
+$ cat target/wildfly-channel-reports/dependencies-missing-from-channels.txt 
+----------------------------------------------------------------------
+ Following dependencies are not represented in specified channels     
+----------------------------------------------------------------------
+ Dependency                                                           
+----------------------------------------------------------------------
+ org.wildfly.checkstyle:wildfly-checkstyle-config:1.0.8.Final         
+ org.wildfly.plugins:wildfly-jar-maven-plugin:9.0.1.Final-SNAPSHOT    
+ org.wildfly.checkstyle:wildfly-checkstyle-config:1.0.8.Final  
+ ...
+----------------------------------------------------------------------
 ```
   
 ## Static Configuration
@@ -135,47 +196,9 @@ you can create the `.wildfly-channel-maven-plugin` file in your project with fol
 
 and then just call the following command to achieve the same result as the original command:
 
-
 ```shell
 mvn org.wildfly:wildfly-channel-maven-plugin:upgrade \
   -DmanifestFile=path/to/manifest.yaml
-```
-
-## Usage Examples
-
-(See additional examples, including sample files, in the [examples](examples/README.md) directory.)
-
-### Example 1
-
-Align all dependencies according to a channel file:
-
-```shell
-# navigate to a maven project
-cd some-maven-project/
-
-# execute the plugin
-mvn org.wildfly:wildfly-channel-maven-plugin:upgrade \
-   -DchannelFile=<path/to/channel.yaml>
-
-# review changes
-git diff
-```
-
-### Example 2
-
-More complex use case:
-
-* override the "version.dep1" property to "1.0.2",
-* suppress any changes in properties that start with the "legacy." string,
-* do not process the "project.group:submodule1" submodule (no changes will be made to that `pom.xml`),
-* align all remaining dependencies, not affected by above rules, to versions defined in given channel file.
-
-```shell
-mvn org.wildfly:wildfly-channel-maven-plugin:upgrade \
-   -DchannelFile=<path/to/channel.yaml> \
-   -DoverrideProperties=version.dep1=1.0.2 \
-   -DignorePropertiesPrefixedWith=legacy. \
-   -DignoreModules=project.group:submodule1
 ```
 
 ## Developing This Plugin
