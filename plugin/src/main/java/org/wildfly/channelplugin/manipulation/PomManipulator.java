@@ -24,9 +24,12 @@ import org.commonjava.maven.ext.common.model.Project;
  */
 public class PomManipulator {
 
-    private static final String DEPENDENCY_MANAGEMENT_PATH = "/project/dependencyManagement/dependencies";
+    private static final String DEPENDENCY_MANAGEMENT_PATH = "/project/dependencyManagement";
+    private static final String DEPENDENCY_MANAGEMENT_DEPENDENCIES_PATH = "/project/dependencyManagement/dependencies";
     private static final String REPOSITORIES_PATH = "/project/repositories";
     private static final String PLUGIN_REPOSITORIES_PATH = "/project/pluginRepositories";
+    private static final String PROJECT = "project";
+    private static final String DEPENDENCY_MANAGEMENT = "dependencyManagement";
     private static final String DEPENDENCIES = "dependencies";
     private static final String REPOSITORIES = "repositories";
     private static final String PLUGIN_REPOSITORIES = "pluginRepositories";
@@ -67,6 +70,8 @@ public class PomManipulator {
 
     public void injectManagedDependency(ArtifactRef dependency, Collection<ProjectRef> exclusions, String oldVersion)
             throws XMLStreamException {
+        injectDependencyManagementSection(eventReader);
+        injectDependencyManagementDependenciesSection(eventReader);
         injectManagedDependency(eventReader, dependency, exclusions, oldVersion);
     }
 
@@ -169,13 +174,72 @@ public class PomManipulator {
                 path = path + "/" + event.asStartElement().getName().getLocalPart();
             } else if (event.isEndElement()) {
                 if (event.asEndElement().getName().getLocalPart().equals(DEPENDENCIES)
-                        && path.equals(DEPENDENCY_MANAGEMENT_PATH)) {
+                        && path.equals(DEPENDENCY_MANAGEMENT_DEPENDENCIES_PATH)) {
                     eventReader.mark(0);
                     eventReader.replaceMark(0, composeDependencyElementString(dependency, exclusions, oldVersion)
                                     + "        </dependencies>"
                     );
                     eventReader.clearMark(0);
-                    break;
+                    return;
+                }
+
+                path = stack.pop();
+            }
+        }
+    }
+
+    /**
+     * Inserts dependencyManagement section if it's not already present.
+     */
+    static void injectDependencyManagementSection(ModifiedPomXMLEventReader eventReader) throws XMLStreamException {
+        eventReader.rewind();
+
+        while (eventReader.hasNext()) {
+            XMLEvent event = eventReader.nextEvent();
+            if (event.isStartElement()) {
+                if (event.asStartElement().getName().getLocalPart().equals(DEPENDENCY_MANAGEMENT)) {
+                    // dependency management is already present
+                    return;
+                }
+            } else if (event.isEndElement()) {
+                if (event.asEndElement().getName().getLocalPart().equals(PROJECT)) {
+                    eventReader.mark(0);
+                    eventReader.replaceMark(0, composeDependencyManagementElementString()
+                            + "</project>"
+                    );
+                    eventReader.clearMark(0);
+                    return;
+                }
+            }
+        }
+    }
+
+    static void injectDependencyManagementDependenciesSection(ModifiedPomXMLEventReader eventReader)
+            throws XMLStreamException {
+        eventReader.rewind();
+
+        Stack<String> stack = new Stack<>();
+        String path = "";
+
+        while (eventReader.hasNext()) {
+            XMLEvent event = eventReader.nextEvent();
+            if (event.isStartElement()) {
+                if (event.asStartElement().getName().getLocalPart().equals(DEPENDENCIES)
+                        && path.equals(DEPENDENCY_MANAGEMENT_PATH)) {
+                    // dependencies section is already present
+                    return;
+                }
+
+                stack.push(path);
+                path = path + "/" + event.asStartElement().getName().getLocalPart();
+            } else if (event.isEndElement()) {
+                if (event.asEndElement().getName().getLocalPart().equals(DEPENDENCY_MANAGEMENT)) {
+                    eventReader.mark(0);
+                    eventReader.replaceMark(0, composeDependenciesElementString()
+                            + "    </dependencyManagement>"
+                    );
+                    eventReader.clearMark(0);
+                    return;
                 }
 
                 path = stack.pop();
@@ -213,6 +277,16 @@ public class PomManipulator {
                 path = stack.pop();
             }
         }
+    }
+
+    private static String composeDependencyManagementElementString() {
+        return "    <dependencyManagement>\n"
+                + "    </dependencyManagement>\n";
+    }
+
+    private static String composeDependenciesElementString() {
+        return "    <dependencies>\n"
+                + "        </dependencies>\n";
     }
 
     private static String composeDependencyElementString(ArtifactRef artifact, Collection<ProjectRef> exclusions, String oldVersion) {

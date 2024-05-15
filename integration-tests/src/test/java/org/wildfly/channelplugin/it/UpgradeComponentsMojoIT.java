@@ -193,4 +193,44 @@ public class UpgradeComponentsMojoIT {
                     assertThat(o.get().getVersion()).isEqualTo("${version.clean.plugin}");
                 });
     }
+
+    @MavenGoal("${project.groupId}:wildfly-channel-maven-plugin:${project.version}:upgrade")
+    @SystemProperty(value = "manifestFile", content = "manifest.yaml")
+    @SystemProperty(value = "doNotDowngrade", content = "true")
+    @MavenTest
+    void downgrade_not_allowed_test_case(MavenExecutionResult result) {
+        assertThat(result).isSuccessful();
+
+        Model model = result.getMavenProjectResult().getModel();
+        DependencyModel dependencyModel = new DependencyModel(model);
+
+        assertThat(dependencyModel.getDependency("org.jboss.marshalling", "jboss-marshalling", "jar", null))
+                .satisfies(d -> {
+                    assertThat(d).isPresent();
+                    assertThat(d.get().getVersion()).isEqualTo("2.0.6.Final");
+                });
+        assertThat(dependencyModel.getDependency("io.undertow", "undertow-core", "jar", null))
+                .isEmpty();
+    }
+
+    @MavenGoal("${project.groupId}:wildfly-channel-maven-plugin:${project.version}:upgrade")
+    @SystemProperty(value = "manifestFile", content = "manifest.yaml")
+    @MavenTest
+    void downgrade_allowed_test_case(MavenExecutionResult result) {
+        assertThat(result).isSuccessful();
+
+        Model model = result.getMavenProjectResult().getModel();
+        DependencyModel dependencyModel = new DependencyModel(model);
+
+        assertThat(dependencyModel.getDependency("org.jboss.marshalling", "jboss-marshalling", "jar", null))
+                .satisfies(d -> {
+                    assertThat(d).isPresent();
+                    assertThat(d.get().getVersion()).isEqualTo("2.0.5.Final");
+                });
+        assertThat(dependencyModel.getDependency("io.undertow", "undertow-core", "jar", null))
+                .satisfies(d -> {
+                    assertThat(d).isPresent();
+                    assertThat(d.get().getVersion()).isEqualTo("2.2.4.Final");
+                });
+    }
 }

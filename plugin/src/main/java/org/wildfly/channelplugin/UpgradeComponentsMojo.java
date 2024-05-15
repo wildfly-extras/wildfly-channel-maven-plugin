@@ -146,6 +146,12 @@ public class UpgradeComponentsMojo extends AbstractChannelMojo {
     @Parameter(property = "injectRepositories", defaultValue = "true")
     boolean injectRepositories;
 
+    /**
+     * If set to true, the plugin will not downgrade versions.
+     */
+    @Parameter(property = "doNotDowngrade", defaultValue = "false")
+    boolean doNotDowngrade;
+
     @Inject
     DependencyGraphBuilder dependencyGraphBuilder;
 
@@ -501,12 +507,13 @@ public class UpgradeComponentsMojo extends AbstractChannelMojo {
                         artifactRef.getVersionString());
                 String channelVersion = versionResult.getVersion();
 
-                if (compareVersions(channelVersion, artifactRef.getVersionString()) > 0) {
+                int comparison = compareVersions(channelVersion, artifactRef.getVersionString());
+                if (comparison > 0 || (!doNotDowngrade && comparison < 0)) {
                     getLog().info("Updating dependency " + artifactRef.getGroupId()
                             + ":" + artifactRef.getArtifactId() + ":" + artifactRef.getVersionString()
                             + " to version " + channelVersion);
+                    dependenciesToUpgrade.add(Pair.of(dependency, channelVersion));
                 }
-                dependenciesToUpgrade.add(Pair.of(dependency, channelVersion));
             } catch (UnresolvedMavenArtifactException e) {
                 // this produces a lot of noise due to many of e.g. test artifacts not being managed by channels, so keep it
                 // at the debug level
@@ -529,11 +536,17 @@ public class UpgradeComponentsMojo extends AbstractChannelMojo {
         // This performs a traversal of a dependency tree of all submodules in the project. All discovered dependencies
         // that are not directly declared in the project are considered transitive dependencies.
         Map<ArtifactRef, Collection<ProjectRef>> dependenciesToInject = new HashMap<>();
-        for (MavenProject module: mavenProject.getCollectedProjects()) {
+        ArrayList<MavenProject> projects = new ArrayList<>();
+        projects.add(mavenProject);
+        projects.addAll(mavenProject.getCollectedProjects());
+        for (MavenProject module: projects) {
 
             // Collect exclusions from the effective POM
             Map<ArtifactRef, Collection<ProjectRef>> artifactExclusions = new HashMap<>();
-            List<Dependency> managedDependencies = module.getModel().getDependencyManagement().getDependencies();
+            List<Dependency> managedDependencies = Collections.emptyList();
+            if (module.getModel().getDependencyManagement() != null) {
+                managedDependencies = module.getModel().getDependencyManagement().getDependencies();
+            }
             managedDependencies.forEach(dep -> artifactExclusions.put(toArtifactRef(dep), toProjectRefs(dep.getExclusions())));
 
             ProjectBuildingRequest buildingRequest =
@@ -582,7 +595,8 @@ public class UpgradeComponentsMojo extends AbstractChannelMojo {
                 VersionResult versionResult = channelSession.findLatestMavenArtifactVersion(artifact.getGroupId(),
                         artifact.getArtifactId(), artifact.getType(), artifact.getClassifier(), artifact.getVersionString());
                 newVersion = versionResult.getVersion();
-                if (compareVersions(newVersion, artifact.getVersionString()) <= 0) {
+                int comparison = compareVersions(newVersion, artifact.getVersionString());
+                if ((doNotDowngrade && comparison < 0) || comparison == 0) {
                     return;
                 }
             } catch (NoStreamFoundException e) {
