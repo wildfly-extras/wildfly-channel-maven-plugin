@@ -22,7 +22,7 @@ public class VerifyDependenciesMojoIT {
     @MavenTest
     void unaligned_test_case(MavenExecutionResult result) throws Exception {
         assertThat(result).isFailure();
-        assertThat(result).out().warn().contains(
+        assertThat(result).out().error().contains(
                 "Dependency org.jboss.marshalling:jboss-marshalling:2.0.6.Final doesn't match expected version 2.0.9.Final-redhat-00001",
                 "Dependency commons-io:commons-io:2.10.0 doesn't match expected version 2.10.1.redhat-00001",
                 "Dependency io.undertow:undertow-core:2.2.5.Final doesn't match expected version 2.2.6.Final"
