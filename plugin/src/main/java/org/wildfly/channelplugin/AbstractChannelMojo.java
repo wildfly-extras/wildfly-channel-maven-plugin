@@ -95,20 +95,6 @@ public abstract class AbstractChannelMojo extends AbstractMojo {
     protected ChannelSession channelSession;
 
     protected void initChannelSession() throws MojoExecutionException {
-        int numberOfSources = 0;
-        if (StringUtils.isNotBlank(channelFile)) numberOfSources++;
-        if (StringUtils.isNotBlank(channelGAV)) numberOfSources++;
-        if (StringUtils.isNotBlank(manifestFile)) numberOfSources++;
-        if (StringUtils.isNotBlank(manifestGAV)) numberOfSources++;
-        if (numberOfSources > 1) {
-            throw new MojoExecutionException("Exactly one of [channelFile, channelGAV, manifestFile, manifestGAV] has to be given.");
-        }
-
-        // Do not enforce this for now, repositories are also read from project pom.xml currently.
-        /*if ((StringUtils.isNotBlank(manifestFile) || StringUtils.isNotBlank(manifestGAV)) && remoteRepositories.isEmpty()) {
-            throw new MojoExecutionException("The remoteRepositories property is mandatory when manifest is given.");
-        }*/
-
         try {
             if (StringUtils.isNotBlank(channelFile)) {
                 String[] paths = channelFile.split(",");
@@ -120,19 +106,22 @@ public abstract class AbstractChannelMojo extends AbstractMojo {
                     getLog().info("Reading channel file " + channelFilePath);
                     channels.add(ChannelMapper.from(channelFilePath.toUri().toURL()));
                 }
-            } else if (StringUtils.isNotBlank(channelGAV)) {
+            }
+            if (StringUtils.isNotBlank(channelGAV)) {
                 String[] gavs = channelGAV.split(",");
                 for (String gav: gavs) {
                     channels.addAll(resolveChannelsFromGav(gav));
                 }
-            } else if (StringUtils.isNotBlank(manifestFile)) {
+            }
+            if (StringUtils.isNotBlank(manifestFile)) {
                 String[] paths = manifestFile.split(",");
                 for (String path: paths) {
                     URL manifestUrl = Path.of(path).toUri().toURL();
                     ChannelManifestCoordinate coordinate = new ChannelManifestCoordinate(manifestUrl);
                     channels.add(new Channel("a-channel", null, null, null, coordinate, null, null));
                 }
-            } else if (StringUtils.isNotBlank(manifestGAV)) {
+            }
+            if (StringUtils.isNotBlank(manifestGAV)) {
                 String[] gavs = manifestGAV.split(",");
                 for (String gav: gavs) {
                     ChannelManifestCoordinate coordinate = toManifestCoordinate(gav);
@@ -144,7 +133,9 @@ public abstract class AbstractChannelMojo extends AbstractMojo {
                     repositories.addAll(createRepositories(remoteRepositories));
                     channels.add(new Channel("a-channel", null, null, repositories, coordinate, null, null));
                 }
-            } else {
+            }
+
+            if (channels.isEmpty()) {
                 throw new MojoExecutionException("No channel or manifest specified.");
             }
         } catch (MalformedURLException e) {

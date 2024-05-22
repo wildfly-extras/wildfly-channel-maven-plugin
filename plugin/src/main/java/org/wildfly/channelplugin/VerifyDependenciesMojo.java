@@ -123,7 +123,7 @@ public class VerifyDependenciesMojo extends AbstractChannelMojo {
             unalignedDependencies.forEach(pair -> {
                 ArtifactRef dep = pair.getLeft();
                 String v = pair.getRight();
-                getLog().warn(String.format("Dependency %s:%s:%s doesn't match expected version %s",
+                getLog().error(String.format("Dependency %s:%s:%s doesn't match expected version %s",
                         dep.getGroupId(), dep.getArtifactId(), dep.getVersionString(), v));
             });
             if (failBuild) {
