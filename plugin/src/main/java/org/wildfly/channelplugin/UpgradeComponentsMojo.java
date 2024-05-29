@@ -237,7 +237,7 @@ public class UpgradeComponentsMojo extends AbstractChannelMojo {
 
             // if channel was given as an input, insert channel repositories into the parent pom
             if (injectRepositories) {
-                Map<String, String> repositoriesToInject = channels.stream().flatMap(c -> c.getRepositories().stream())
+                Map<String, String> repositoriesToInject = channels.stream().flatMap(c -> c.getRepositories().stream()).distinct()
                         .collect(Collectors.toMap(Repository::getId, Repository::getUrl));
                 InjectRepositoriesMojo.insertRepositories(rootProject, rootManipulator, repositoriesToInject);
             }
