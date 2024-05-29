@@ -25,6 +25,7 @@ import org.commonjava.maven.ext.common.ManipulationException;
 import org.commonjava.maven.ext.common.model.Project;
 import org.commonjava.maven.ext.core.ManipulationSession;
 import org.wildfly.channel.NoStreamFoundException;
+import org.wildfly.channel.Repository;
 import org.wildfly.channel.UnresolvedMavenArtifactException;
 import org.wildfly.channel.VersionResult;
 import org.wildfly.channelplugin.manipulation.PomManipulator;
@@ -236,7 +237,9 @@ public class UpgradeComponentsMojo extends AbstractChannelMojo {
 
             // if channel was given as an input, insert channel repositories into the parent pom
             if (injectRepositories) {
-                InjectRepositoriesMojo.insertRepositories(rootProject, rootManipulator, channels);
+                Map<String, String> repositoriesToInject = channels.stream().flatMap(c -> c.getRepositories().stream())
+                        .collect(Collectors.toMap(Repository::getId, Repository::getUrl));
+                InjectRepositoriesMojo.insertRepositories(rootProject, rootManipulator, repositoriesToInject);
             }
 
             // override modified poms

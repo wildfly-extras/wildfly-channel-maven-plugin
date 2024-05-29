@@ -1,5 +1,6 @@
 package org.wildfly.channelplugin;
 
+import org.apache.commons.lang3.StringUtils;
 import org.apache.maven.execution.MavenSession;
 import org.apache.maven.model.RepositoryBase;
 import org.apache.maven.plugin.AbstractMojo;
@@ -21,14 +22,15 @@ import javax.xml.stream.XMLStreamException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Path;
-import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
- * This Mojo takes a channel file, extracts Maven repositories used by channels in the file, and injects those
- * repositories into the project POM, so that Maven would use them to download dependencies from.
+ * Inject repositories into project pom.xml. Either use `-DfromChannelFile=path/to/channel.yaml` to inject repositories
+ * referenced in given channel file, or use `-Drepositories=repoID::repoURL,...` to inject specified repositories.
  */
 @Mojo(name = "inject-repositories", requiresDirectInvocation = true)
 public class InjectRepositoriesMojo extends AbstractMojo {
@@ -40,8 +42,14 @@ public class InjectRepositoriesMojo extends AbstractMojo {
     /**
      * Channel file path to extract repositories from.
      */
-    @Parameter(required = true, property = "fromChannelFile")
+    @Parameter(property = "fromChannelFile")
     String fromChannelFile;
+
+    /**
+     * Comma separated list of "repositoryID::repositoryURL" strings
+     */
+    @Parameter(property = "repositories")
+    List<String> repositories;
 
     @Inject
     MavenSession mavenSession;
@@ -59,17 +67,37 @@ public class InjectRepositoriesMojo extends AbstractMojo {
             return;
         }
 
-        Path channelFilePath = Path.of(fromChannelFile);
-        if (!channelFilePath.isAbsolute()) {
-            channelFilePath = Path.of(mavenSession.getExecutionRootDirectory()).resolve(channelFilePath);
+        if (StringUtils.isBlank(fromChannelFile) && (repositories == null || repositories.isEmpty())) {
+            throw new MojoExecutionException("Exactly one of `fromChannelFile` and `repositories` parameters is needed.");
+        }
+        if (StringUtils.isNotBlank(fromChannelFile) && repositories != null && !repositories.isEmpty()) {
+            throw new MojoExecutionException("Exactly one of `fromChannelFile` and `repositories` parameters is needed.");
         }
 
-        getLog().info("Reading channel file " + channelFilePath);
-        List<Channel> channels;
-        try (InputStream is = channelFilePath.toUri().toURL().openStream()) {
-            channels = ChannelMapper.fromString(new String(is.readAllBytes()));
-        } catch (IOException e) {
-            throw new MojoExecutionException("Can't read channel file", e);
+        final Map<String, String> repositoriesToInject = new HashMap<>();
+
+        if (StringUtils.isNotBlank(fromChannelFile)) {
+            Path channelFilePath = Path.of(fromChannelFile);
+            if (!channelFilePath.isAbsolute()) {
+                channelFilePath = Path.of(mavenSession.getExecutionRootDirectory()).resolve(channelFilePath);
+            }
+
+            getLog().info("Reading channel file " + channelFilePath);
+            List<Channel> channels;
+            try (InputStream is = channelFilePath.toUri().toURL().openStream()) {
+                channels = ChannelMapper.fromString(new String(is.readAllBytes()));
+            } catch (IOException e) {
+                throw new MojoExecutionException("Can't read channel file", e);
+            }
+            channels.stream().flatMap(c -> c.getRepositories().stream()).forEach(repository -> {
+                if (!repositoriesToInject.containsValue(repository.getUrl())) {
+                    repositoriesToInject.put(repository.getId(), repository.getUrl());
+                }
+            });
+        } else if (repositories != null && !repositories.isEmpty()) {
+            AbstractChannelMojo.createRepositories(repositories).forEach(r -> {
+                repositoriesToInject.put(r.getId(), r.getUrl());
+            });
         }
 
         try {
@@ -77,55 +105,49 @@ public class InjectRepositoriesMojo extends AbstractMojo {
             Project rootProject = PMEUtils.findRootProject(projects);
             getLog().info("Root project: " + rootProject.getArtifactId());
             PomManipulator manipulator = new PomManipulator(rootProject);
-            insertRepositories(rootProject, manipulator, channels);
+            insertRepositories(rootProject, manipulator, repositoriesToInject);
             manipulator.writePom();
         } catch (ManipulationException e) {
             throw new MojoExecutionException("Can't parse project POM files", e);
         }
     }
 
-    static void insertRepositories(Project project, PomManipulator manipulator, Collection<Channel> channels) {
-
+    static void insertRepositories(Project project, PomManipulator manipulator, Map<String, String> repositories) {
         Set<String> existingRepositories = project.getModel().getRepositories().stream()
                 .map(RepositoryBase::getUrl)
                 .collect(Collectors.toSet());
         existingRepositories.add(CENTRAL_URL);
 
-        channels.stream()
-                .flatMap(c -> c.getRepositories().stream())
-                .distinct()
-                .forEach(r -> {
-                    if (!existingRepositories.contains(r.getUrl())) {
-                        try {
-                            logger.infof("Inserting repository %s", r.getUrl());
-                            manipulator.injectRepository(r.getId(), r.getUrl());
-                        } catch (XMLStreamException e) {
-                            ChannelPluginLogger.LOGGER.errorf("Failed to inject repository: %s", e.getMessage());
-                        }
-                    } else {
-                        logger.infof("Repository with URL %s is already present.", r.getUrl());
-                    }
-                });
+        repositories.forEach((id, url) -> {
+            if (!existingRepositories.contains(url)) {
+                try {
+                    logger.infof("Inserting repository %s", url);
+                    manipulator.injectRepository(id, url);
+                } catch (XMLStreamException e) {
+                    ChannelPluginLogger.LOGGER.errorf("Failed to inject repository: %s", e.getMessage());
+                }
+            } else {
+                logger.infof("Repository with URL %s is already present.", url);
+            }
+        });
 
         Set<String> existingPluginRepositories = project.getModel().getPluginRepositories().stream()
                 .map(RepositoryBase::getUrl)
                 .collect(Collectors.toSet());
         existingPluginRepositories.add(CENTRAL_URL);
 
-        channels.stream()
-                .flatMap(c -> c.getRepositories().stream()).distinct()
-                .forEach(r -> {
-                    if (!existingPluginRepositories.contains(r.getUrl())) {
-                        try {
-                            logger.infof("Inserting repository %s", r.getUrl());
-                            manipulator.injectPluginRepository(r.getId(), r.getUrl());
-                        } catch (XMLStreamException e) {
-                            ChannelPluginLogger.LOGGER.errorf("Failed to inject repository: %s", e.getMessage());
-                        }
-                    } else {
-                        logger.infof("Repository with URL %s is already present.", r.getUrl());
-                    }
-                });
+        repositories.forEach((id, url) -> {
+            if (!existingPluginRepositories.contains(url)) {
+                try {
+                    logger.infof("Inserting plugin repository %s", url);
+                    manipulator.injectPluginRepository(id, url);
+                } catch (XMLStreamException e) {
+                    ChannelPluginLogger.LOGGER.errorf("Failed to inject plugin repository: %s", e.getMessage());
+                }
+            } else {
+                logger.infof("Plugin repository with URL %s is already present.", url);
+            }
+        });
     }
 
 }
