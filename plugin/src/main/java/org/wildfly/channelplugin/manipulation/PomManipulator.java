@@ -75,7 +75,79 @@ public class PomManipulator {
         injectManagedDependency(eventReader, dependency, exclusions, oldVersion);
     }
 
+    static void injectRepositoriesSection(ModifiedPomXMLEventReader eventReader) throws XMLStreamException {
+        eventReader.rewind();
+
+        Stack<String> stack = new Stack<String>();
+        String path = "";
+
+        while (eventReader.hasNext()) {
+            XMLEvent event = eventReader.nextEvent();
+            if (event.isStartElement()) {
+                if (path.equals("/project") && event.asStartElement().getName().getLocalPart().equals(REPOSITORIES)) {
+                    // section is already present
+                    return;
+                }
+
+                stack.push(path);
+                path = path + "/" + event.asStartElement().getName().getLocalPart();
+            } else if (event.isEndElement()) {
+                if (event.asEndElement().getName().getLocalPart().equals(PROJECT)) {
+                    eventReader.mark(0);
+                    eventReader.replaceMark(0, composeRepositoriesElementString()
+                            + "</project>"
+                    );
+                    eventReader.clearMark(0);
+                    return;
+                }
+
+                path = stack.pop();
+            }
+        }
+    }
+
+    static void injectPluginRepositoriesSection(ModifiedPomXMLEventReader eventReader) throws XMLStreamException {
+        eventReader.rewind();
+
+        Stack<String> stack = new Stack<String>();
+        String path = "";
+
+        while (eventReader.hasNext()) {
+            XMLEvent event = eventReader.nextEvent();
+            if (event.isStartElement()) {
+                if (path.equals("/project") && event.asStartElement().getName().getLocalPart().equals(PLUGIN_REPOSITORIES)) {
+                    // section is already present
+                    return;
+                }
+
+                stack.push(path);
+                path = path + "/" + event.asStartElement().getName().getLocalPart();
+            } else if (event.isEndElement()) {
+                if (event.asEndElement().getName().getLocalPart().equals(PROJECT)) {
+                    eventReader.mark(0);
+                    eventReader.replaceMark(0, composePluginRepositoriesElementString()
+                            + "</project>"
+                    );
+                    eventReader.clearMark(0);
+                    return;
+                }
+
+                path = stack.pop();
+            }
+        }
+    }
+
     public void injectRepository(String id, String url) throws XMLStreamException {
+        injectRepository(eventReader, id, url);
+    }
+
+    public void injectPluginRepository(String id, String url) throws XMLStreamException {
+        injectPluginRepository(eventReader, id, url);
+    }
+
+    static void injectRepository(ModifiedPomXMLEventReader eventReader, String id, String url) throws XMLStreamException {
+        injectRepositoriesSection(eventReader);
+
         eventReader.rewind();
 
         Stack<String> stack = new Stack<String>();
@@ -103,10 +175,12 @@ public class PomManipulator {
         }
     }
 
-    public void injectPluginRepository(String id, String url) throws XMLStreamException {
+    static void injectPluginRepository(ModifiedPomXMLEventReader eventReader, String id, String url) throws XMLStreamException {
+        injectPluginRepositoriesSection(eventReader);
+
         eventReader.rewind();
 
-        Stack<String> stack = new Stack<String>();
+        Stack<String> stack = new Stack<>();
         String path = "";
 
         while (eventReader.hasNext()) {
@@ -287,6 +361,16 @@ public class PomManipulator {
     private static String composeDependenciesElementString() {
         return "    <dependencies>\n"
                 + "        </dependencies>\n";
+    }
+
+    private static String composeRepositoriesElementString() {
+        return "    <repositories>\n"
+                + "    </repositories>\n";
+    }
+
+    private static String composePluginRepositoriesElementString() {
+        return "    <pluginRepositories>\n"
+                + "    </pluginRepositories>\n";
     }
 
     private static String composeDependencyElementString(ArtifactRef artifact, Collection<ProjectRef> exclusions, String oldVersion) {

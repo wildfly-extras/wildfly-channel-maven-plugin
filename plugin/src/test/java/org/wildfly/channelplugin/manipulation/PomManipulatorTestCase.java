@@ -71,6 +71,34 @@ public class PomManipulatorTestCase {
         Assertions.assertThat(model.getProperties().getProperty("prop")).isEqualTo("value");
     }
 
+    @Test
+    public void testInsertRepository() throws IOException, XMLStreamException, ManipulationException {
+        Model model = readModel();
+        Assertions.assertThat(model.getRepositories()).isEmpty();
+        Assertions.assertThat(model.getPluginRepositories()).isEmpty();
+
+        PomManipulator.injectRepository(eventReader, "repo", "https://maven/repo");
+
+        model = readModel();
+        Assertions.assertThat(model.getRepositories().size()).isEqualTo(1);
+        Assertions.assertThat(model.getRepositories().get(0))
+                .matches(r -> r.getId().equals("repo") && r.getUrl().equals("https://maven/repo"));
+    }
+
+    @Test
+    public void testInsertPluginRepository() throws IOException, XMLStreamException, ManipulationException {
+        Model model = readModel();
+        Assertions.assertThat(model.getRepositories()).isEmpty();
+        Assertions.assertThat(model.getPluginRepositories()).isEmpty();
+
+        PomManipulator.injectRepository(eventReader, "repo", "https://maven/repo");
+
+        model = readModel();
+        Assertions.assertThat(model.getRepositories().size()).isEqualTo(1);
+        Assertions.assertThat(model.getRepositories().get(0))
+                .matches(r -> r.getId().equals("repo") && r.getUrl().equals("https://maven/repo"));
+    }
+
     private Model readModel() throws IOException, ManipulationException {
         Path pomFile = Files.createTempFile("pom", "xml");
         Files.write(pomFile, content.toString().getBytes());

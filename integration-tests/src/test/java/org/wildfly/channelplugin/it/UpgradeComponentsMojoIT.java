@@ -44,7 +44,7 @@ public class UpgradeComponentsMojoIT {
         Model model = result.getMavenProjectResult().getModel();
         DependencyModel dependencyModel = new DependencyModel(model);
 
-        // verify version property has been overriden
+        // verify version property has been overridden
         assertThat(model.getProperties().getProperty("undertow.version"))
                 .usingComparator(VersionMatcher.COMPARATOR).isEqualTo("2.2.17.SP1-redhat-00001");
 
@@ -82,6 +82,9 @@ public class UpgradeComponentsMojoIT {
                     assertThat(o).isPresent();
                     assertThat(o.get().getVersion()).isEqualTo("1.0.0.Final");
                 });
+
+        assertThat(model.getRepositories()).isNotEmpty();
+        assertThat(model.getRepositories().get(0).getUrl()).startsWith("file://"); // TODO: check complete URL
     }
 
     /**
