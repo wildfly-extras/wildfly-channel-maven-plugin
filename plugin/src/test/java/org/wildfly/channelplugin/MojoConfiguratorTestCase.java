@@ -46,12 +46,12 @@ public class MojoConfiguratorTestCase {
     public void testDefaultOverrides() throws Exception {
         UpgradeComponentsMojo mojo = new UpgradeComponentsMojo();
         // Set to non-default value:
-        mojo.inlineVersionOnConflict = false;
+        mojo.injectTransitiveDependencies = false;
         mojo.overrideDependencies = List.of("a:b:c");
         mojo.localRepositoryPath = "some/path";
 
         // Create config file that tries to change above settings:
-        Files.writeString(config.toPath(), "-DinlineVersionOnConflict=true\n"
+        Files.writeString(config.toPath(), "-DinjectTransitiveDependencies=true\n"
                 + "-DoverrideDependencies=d:e:f\n"
                 + "-DlocalRepository=other/path");
 
@@ -59,7 +59,7 @@ public class MojoConfiguratorTestCase {
         configurator.configureProperties(mojo);
 
         // Check that original values were preserved:
-        assertThat(mojo.inlineVersionOnConflict).isEqualTo(false);
+        assertThat(mojo.injectTransitiveDependencies).isEqualTo(false);
         assertThat(mojo.overrideDependencies).containsExactly("a:b:c");
         assertThat(mojo.localRepositoryPath).isEqualTo("some/path");
     }
