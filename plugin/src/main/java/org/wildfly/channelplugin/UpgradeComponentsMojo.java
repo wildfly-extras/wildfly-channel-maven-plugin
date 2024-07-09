@@ -1,5 +1,7 @@
 package org.wildfly.channelplugin;
 
+import groovy.lang.Tuple;
+import groovy.lang.Tuple3;
 import org.apache.commons.lang3.tuple.Pair;
 import org.apache.maven.artifact.versioning.DefaultArtifactVersion;
 import org.apache.maven.model.Dependency;
@@ -116,11 +118,11 @@ public class UpgradeComponentsMojo extends AbstractChannelMojo {
     List<String> overrideDependencies;
 
     /**
-     * Replace property reference in dependency version element with inlined version string, when it's not possible to
-     * override property value due to conflicting versions for different dependencies that use the property.
+     * If true, upgraded versions would be inlined in the dependency version element, possibly replacing a property
+     * reference if it was originally used. If false, the property would be updated instead (less robust option).
      */
-    @Parameter(property = "inlineVersionOnConflict", defaultValue = "true")
-    boolean inlineVersionOnConflict;
+    @Parameter(property = "inlineUpgradedVersions", defaultValue = "true")
+    boolean inlineUpgradedVersions;
 
     /**
      * If true, transitive dependencies of the project that are also declared in the channel will be injected into root
@@ -268,10 +270,11 @@ public class UpgradeComponentsMojo extends AbstractChannelMojo {
         List<String> overriddenProperties = performHardPropertyOverrides(manipulator);
         List<Dependency> overriddenDependencies = performHardDependencyOverrides(resolvedProjectDependencies, manipulator);
 
-        List<Pair<Dependency, String>> dependenciesToUpgrade = findDependenciesToUpgrade(resolvedProjectDependencies);
-        for (Pair<Dependency, String> upgrade: dependenciesToUpgrade) {
-            String newVersion = upgrade.getRight();
-            Dependency locatedDependency = upgrade.getLeft();
+        List<Tuple3<Dependency, ArtifactRef, String>> dependenciesToUpgrade = findDependenciesToUpgrade(resolvedProjectDependencies);
+        for (Tuple3<Dependency, ArtifactRef, String> upgrade: dependenciesToUpgrade) {
+            String newVersion = upgrade.getV3();
+            Dependency locatedDependency = upgrade.getV1();
+            ArtifactRef resolvedDependency = upgrade.getV2();
 
             @SuppressWarnings("UnnecessaryLocalVariable")
             Dependency d = locatedDependency;
@@ -281,7 +284,7 @@ public class UpgradeComponentsMojo extends AbstractChannelMojo {
                 continue;
             }
 
-            if (VersionUtils.isProperty(locatedDependency.getVersion())) { // dependency version is set from a property
+            if (VersionUtils.isProperty(locatedDependency.getVersion()) && !inlineUpgradedVersions) { // dependency version is set from a property
                 String originalVersionString = locatedDependency.getVersion();
                 String versionPropertyName = VersionUtils.extractPropertyName(originalVersionString);
 
@@ -319,20 +322,12 @@ public class UpgradeComponentsMojo extends AbstractChannelMojo {
                         // property has already been changed to different value
                         String propertyName = projectProperty.getRight();
                         String currentPropertyValue = upgradedProperties.get(projectProperty);
-                        if (inlineVersionOnConflict) {
-                            getLog().warn(String.format("Inlining version string for %s:%s:%s, new version '%s'. " +
-                                    "The original version property '%s' has already been modified to '%s'.",
-                                    d.getGroupId(), d.getArtifactId(), d.getVersion(), newVersion, propertyName,
-                                    currentPropertyValue));
-                            manipulator.overrideDependencyVersion(d.getGroupId(), d.getArtifactId(),
-                                    originalVersionString, newVersion);
-                        } else {
-                            getLog().warn(String.format(
-                                    "Can't upgrade %s:%s:%s to '%s', property '%s' was already upgraded to '%s'.",
-                                    d.getGroupId(), d.getArtifactId(), d.getVersion(), newVersion,
-                                    propertyName,
-                                    currentPropertyValue));
-                        }
+                        getLog().warn(String.format("Inlining version string for %s:%s:%s, new version '%s'. " +
+                                "The original version property '%s' has already been modified to '%s'.",
+                                d.getGroupId(), d.getArtifactId(), d.getVersion(), newVersion, propertyName,
+                                currentPropertyValue));
+                        manipulator.overrideDependencyVersion(d.getGroupId(), d.getArtifactId(),
+                                originalVersionString, newVersion);
                         continue; // do not override the property again
                     }
                 }
@@ -358,7 +353,7 @@ public class UpgradeComponentsMojo extends AbstractChannelMojo {
                             d.getGroupId(), d.getArtifactId(), d.getVersion(), newVersion, targetPropertyName));
                 }
             } else { // dependency version is inlined in version element, can be directly overwritten
-                manipulator.overrideDependencyVersion(toArtifactRef(locatedDependency), newVersion);
+                manipulator.overrideDependencyVersionWithComment(resolvedDependency, newVersion);
             }
         }
 
@@ -451,76 +446,76 @@ public class UpgradeComponentsMojo extends AbstractChannelMojo {
         return projectDependencies;
     }
 
-    private List<Pair<Dependency, String>> findDependenciesToUpgrade(
+    private List<Tuple3<Dependency, ArtifactRef, String>> findDependenciesToUpgrade(
             Map<ArtifactRef, Dependency> resolvedProjectDependencies) {
-        List<Pair<Dependency, String>> dependenciesToUpgrade = new ArrayList<>();
+        List<Tuple3<Dependency, ArtifactRef, String>> dependenciesToUpgrade = new ArrayList<>();
         for (Map.Entry<ArtifactRef, Dependency> entry : resolvedProjectDependencies.entrySet()) {
-            ArtifactRef artifactRef = entry.getKey();
+            ArtifactRef resolvedArtifact = entry.getKey();
             Dependency dependency = entry.getValue();
 
-            Objects.requireNonNull(artifactRef);
+            Objects.requireNonNull(resolvedArtifact);
             Objects.requireNonNull(dependency);
 
-            if (projectGavs.contains(artifactRef.asProjectVersionRef())) {
+            if (projectGavs.contains(resolvedArtifact.asProjectVersionRef())) {
                 getLog().debug("Ignoring in-project dependency: "
-                        + artifactRef.asProjectVersionRef().toString());
+                        + resolvedArtifact.asProjectVersionRef().toString());
                 continue;
             }
-            if (!unignoredStreams.contains(artifactRef.asProjectRef())) {
-                if (ignoredStreams.contains(artifactRef.asProjectRef())) {
+            if (!unignoredStreams.contains(resolvedArtifact.asProjectRef())) {
+                if (ignoredStreams.contains(resolvedArtifact.asProjectRef())) {
                     getLog().info("Skipping dependency (ignored stream): "
-                            + artifactRef.asProjectVersionRef().toString());
+                            + resolvedArtifact.asProjectVersionRef().toString());
                     continue;
                 }
-                ProjectRef wildCardIgnoredProjectRef = new SimpleProjectRef(artifactRef.getGroupId(), "*");
+                ProjectRef wildCardIgnoredProjectRef = new SimpleProjectRef(resolvedArtifact.getGroupId(), "*");
                 if (ignoredStreams.contains(wildCardIgnoredProjectRef)) {
                     getLog().info("Skipping dependency (ignored stream): "
-                            + artifactRef.asProjectVersionRef().toString());
+                            + resolvedArtifact.asProjectVersionRef().toString());
                     continue;
                 }
             }
-            if (artifactRef.getVersionString() == null) {
+            if (resolvedArtifact.getVersionString() == null) {
                 // this is not expected to happen
-                getLog().error("Resolved dependency has null version: " + artifactRef);
+                getLog().error("Resolved dependency has null version: " + resolvedArtifact);
                 continue;
             }
-            if (VersionUtils.isProperty(artifactRef.getVersionString())) {
+            if (VersionUtils.isProperty(resolvedArtifact.getVersionString())) {
                 // hack: PME doesn't seem to resolve properties from external parent poms
                 Pair<String, String> externalProperty = resolveExternalProperty(mavenProject,
-                        VersionUtils.extractPropertyName(artifactRef.getVersionString()));
+                        VersionUtils.extractPropertyName(resolvedArtifact.getVersionString()));
                 if (externalProperty != null) {
-                    artifactRef = new SimpleArtifactRef(artifactRef.getGroupId(), artifactRef.getArtifactId(),
-                            externalProperty.getRight(), artifactRef.getType(), artifactRef.getClassifier());
+                    resolvedArtifact = new SimpleArtifactRef(resolvedArtifact.getGroupId(), resolvedArtifact.getArtifactId(),
+                            externalProperty.getRight(), resolvedArtifact.getType(), resolvedArtifact.getClassifier());
                 } else {
                     // didn't manage to resolve dependency version, this is not expected to happen
-                    getLog().error("Resolved dependency has version with property: " + artifactRef);
+                    getLog().error("Resolved dependency has version with property: " + resolvedArtifact);
                     continue;
                 }
             }
             if ("test".equals(dependency.getScope()) && ignoreTestDependencies) {
                 getLog().info("Skipping dependency (ignored scope): "
-                        + artifactRef.asProjectVersionRef().toString());
+                        + resolvedArtifact.asProjectVersionRef().toString());
                 continue;
             }
 
 
             try {
-                VersionResult versionResult = channelSession.findLatestMavenArtifactVersion(artifactRef.getGroupId(),
-                        artifactRef.getArtifactId(), artifactRef.getType(), artifactRef.getClassifier(),
-                        artifactRef.getVersionString());
+                VersionResult versionResult = channelSession.findLatestMavenArtifactVersion(resolvedArtifact.getGroupId(),
+                        resolvedArtifact.getArtifactId(), resolvedArtifact.getType(), resolvedArtifact.getClassifier(),
+                        resolvedArtifact.getVersionString());
                 String channelVersion = versionResult.getVersion();
 
-                int comparison = compareVersions(channelVersion, artifactRef.getVersionString());
+                int comparison = compareVersions(channelVersion, resolvedArtifact.getVersionString());
                 if (comparison > 0 || (!doNotDowngrade && comparison < 0)) {
-                    getLog().info("Updating dependency " + artifactRef.getGroupId()
-                            + ":" + artifactRef.getArtifactId() + ":" + artifactRef.getVersionString()
+                    getLog().info("Updating dependency " + resolvedArtifact.getGroupId()
+                            + ":" + resolvedArtifact.getArtifactId() + ":" + resolvedArtifact.getVersionString()
                             + " to version " + channelVersion);
-                    dependenciesToUpgrade.add(Pair.of(dependency, channelVersion));
+                    dependenciesToUpgrade.add(Tuple.tuple(dependency, resolvedArtifact, channelVersion));
                 }
             } catch (UnresolvedMavenArtifactException e) {
                 // this produces a lot of noise due to many of e.g. test artifacts not being managed by channels, so keep it
                 // at the debug level
-                getLog().debug("Can't resolve artifact: " + artifactRef, e);
+                getLog().debug("Can't resolve artifact: " + resolvedArtifact, e);
             }
         }
         return dependenciesToUpgrade;

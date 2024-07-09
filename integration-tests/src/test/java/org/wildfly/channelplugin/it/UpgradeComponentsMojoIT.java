@@ -37,6 +37,7 @@ public class UpgradeComponentsMojoIT {
     @SystemProperty(value = "localRepository", content = "${maven.repo.local}")
     @SystemProperty(value = "remoteRepositories", content = "file://${maven.repo.local}")
     @SystemProperty(value = "ignoreStreams", content = "org.jboss:ignored-dep")
+    @SystemProperty(value = "inlineUpgradedVersions", content = "false")
     @MavenTest
     void basic_project_test_case(MavenExecutionResult result) {
         assertThat(result).isSuccessful();
@@ -93,6 +94,7 @@ public class UpgradeComponentsMojoIT {
      */
     @MavenGoal("${project.groupId}:wildfly-channel-maven-plugin:${project.version}:upgrade")
     @SystemProperty(value = "manifestFile", content = "manifest.yaml")
+    @SystemProperty(value = "inlineUpgradedVersions", content = "false")
     @MavenTest
     void eap_bom_test_case(MavenExecutionResult result) throws MalformedURLException {
         assertThat(result).isSuccessful();
@@ -132,6 +134,7 @@ public class UpgradeComponentsMojoIT {
     @MavenGoal("${project.groupId}:wildfly-channel-maven-plugin:${project.version}:upgrade")
     @SystemProperty(value = "manifestFile", content = "manifest.yaml")
     @SystemProperty(value = "overrideProperties", content = "undertow.version=2.2.5.Final-Overridden")
+    @SystemProperty(value = "inlineUpgradedVersions", content = "false")
     @MavenTest
     void override_property_test_case(MavenExecutionResult result) {
         assertThat(result).isSuccessful();
@@ -156,6 +159,7 @@ public class UpgradeComponentsMojoIT {
     @MavenGoal("${project.groupId}:wildfly-channel-maven-plugin:${project.version}:upgrade")
     @SystemProperty(value = "manifestFile", content = "manifest.yaml")
     @SystemProperty(value = "overrideDependencies", content = "io.undertow:undertow-core:2.2.5.Final-Overridden")
+    @SystemProperty(value = "inlineUpgradedVersions", content = "false")
     @MavenTest
     void override_dependency_test_case(MavenExecutionResult result) {
         assertThat(result).isSuccessful();
@@ -180,6 +184,7 @@ public class UpgradeComponentsMojoIT {
      */
     @MavenGoal("${project.groupId}:wildfly-channel-maven-plugin:${project.version}:upgrade")
     @SystemProperty(value = "manifestFile", content = "manifest.yaml")
+    @SystemProperty(value = "inlineUpgradedVersions", content = "false")
     @MavenTest
     void external_properties_test_case(MavenExecutionResult result) {
         assertThat(result).isSuccessful();
@@ -194,6 +199,32 @@ public class UpgradeComponentsMojoIT {
                 .satisfies(o -> {
                     assertThat(o).isPresent();
                     assertThat(o.get().getVersion()).isEqualTo("${version.clean.plugin}");
+                });
+    }
+
+    @MavenGoal("${project.groupId}:wildfly-channel-maven-plugin:${project.version}:upgrade")
+    @SystemProperty(value = "manifestFile", content = "manifest.yaml")
+    @MavenTest
+    void inline_override_test_case(MavenExecutionResult result) {
+        assertThat(result).isSuccessful();
+
+        Model model = result.getMavenProjectResult().getModel();
+        DependencyModel dependencyModel = new DependencyModel(model);
+
+        assertThat(dependencyModel.getDependency("org.apache.maven.plugins", "maven-clean-plugin", "pom", null))
+                .satisfies(o -> {
+                    assertThat(o).isPresent();
+                    assertThat(o.get().getVersion()).isEqualTo("3.3.2");
+                });
+        assertThat(dependencyModel.getDependency("io.undertow", "undertow-core", "jar", null))
+                .satisfies(o -> {
+                    assertThat(o).isPresent();
+                    assertThat(o.get().getVersion()).isEqualTo("2.2.17.Final");
+                });
+        assertThat(dependencyModel.getDependency("io.undertow", "undertow-servlet", "jar", null))
+                .satisfies(o -> {
+                    assertThat(o).isPresent();
+                    assertThat(o.get().getVersion()).isEqualTo("2.2.17.Final");
                 });
     }
 

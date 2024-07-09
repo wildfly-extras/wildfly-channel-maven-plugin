@@ -99,6 +99,26 @@ public class PomManipulatorTestCase {
                 .matches(r -> r.getId().equals("repo") && r.getUrl().equals("https://maven/repo"));
     }
 
+    @Test
+    public void testOverrideDependencyVersionWithComment() throws IOException, XMLStreamException, ManipulationException {
+        DependencyModel model = readDependencyModel();
+        Assertions.assertThat(model.getDependency("org.jboss.marshalling", "jboss-marshalling", "jar", null))
+                .satisfies(dependency -> {
+                    Assertions.assertThat(dependency).isPresent();
+                    Assertions.assertThat(dependency.get().getVersion()).isEqualTo("2.0.6.Final-redhat-00001");
+                });
+
+        PomManipulator.overrideDependencyVersionWithComment(eventReader, "org.jboss.marshalling", "jboss-marshalling",
+                "2.0.6.Final-redhat-00001", "2.0.7.Final");
+
+        model = readDependencyModel();
+        Assertions.assertThat(model.getDependency("org.jboss.marshalling", "jboss-marshalling", "jar", null))
+                .satisfies(dependency -> {
+                    Assertions.assertThat(dependency).isPresent();
+                    Assertions.assertThat(dependency.get().getVersion()).isEqualTo("2.0.7.Final");
+                });
+    }
+
     private Model readModel() throws IOException, ManipulationException {
         Path pomFile = Files.createTempFile("pom", "xml");
         Files.write(pomFile, content.toString().getBytes());

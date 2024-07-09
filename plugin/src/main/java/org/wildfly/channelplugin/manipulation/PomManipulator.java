@@ -2,7 +2,9 @@ package org.wildfly.channelplugin.manipulation;
 
 import java.io.IOException;
 import java.io.Writer;
+import java.util.Arrays;
 import java.util.Collection;
+import java.util.List;
 import java.util.Stack;
 
 import javax.xml.stream.XMLInputFactory;
@@ -62,6 +64,81 @@ public class PomManipulator {
     public void overrideDependencyVersion(String groupId, String artifactId, String oldVersionString, String newVersion) throws XMLStreamException {
         PomHelper.setDependencyVersion(eventReader, groupId, artifactId, oldVersionString, newVersion,
                 project.getModel());
+    }
+
+    public void overrideDependencyVersionWithComment(ArtifactRef d, String newVersion) throws XMLStreamException {
+        overrideDependencyVersionWithComment(eventReader, d.getGroupId(), d.getArtifactId(), d.getVersionString(), newVersion);
+    }
+
+    static void overrideDependencyVersionWithComment(final ModifiedPomXMLEventReader eventReader,
+                                                     final String groupId, final String artifactId,
+                                                     final String oldVersionString, final String newVersion)
+            throws XMLStreamException {
+        eventReader.rewind();
+
+        Stack<String> stack = new Stack<>();
+        String path = "";
+
+        List<String> locations = Arrays.asList(
+                "/project/dependencyManagement/dependencies/dependency",
+                "/project/dependencies/dependency"
+        );
+
+        boolean matchingGroupId = false;
+        boolean matchingArtifactId = false;
+        boolean hasVersion = false;
+
+        while (eventReader.hasNext()) {
+            XMLEvent event = eventReader.nextEvent();
+            if (event.isStartElement()) {
+                String parentElementPath = path;
+                stack.push(path);
+                String elementName = event.asStartElement().getName().getLocalPart();
+                path = path + "/" + elementName;
+
+                if (locations.contains(parentElementPath)) {
+                    switch (elementName) {
+                        case "groupId":
+                            matchingGroupId = groupId.equals(eventReader.getElementText().trim());
+                            path = stack.pop();
+                            break;
+                        case "artifactId":
+                            matchingArtifactId = artifactId.equals(eventReader.getElementText().trim());
+                            path = stack.pop();
+                            break;
+                        case "version":
+                            eventReader.mark(0);
+                            break;
+                    }
+                }
+            } else if (event.isEndElement()) {
+                String parentPath = stack.peek();
+                String elementName = event.asEndElement().getName().getLocalPart();
+                if (locations.contains(parentPath) || locations.contains(path)) {
+                    switch (elementName) {
+                        case "version":
+                            eventReader.mark(1);
+                            String versionString = eventReader.getBetween(0, 1);
+                            hasVersion = !versionString.trim().isEmpty();
+                            break;
+                        case "dependency":
+                            if (matchingGroupId && matchingArtifactId && hasVersion) {
+                                eventReader.replaceMark(1, "</version> <!-- Original version: " + oldVersionString + " -->");
+                                eventReader.replaceBetween(0, 1, newVersion);
+                            }
+
+                            matchingGroupId = false;
+                            matchingArtifactId = false;
+                            hasVersion = false;
+                            eventReader.clearMark(0);
+                            eventReader.clearMark(1);
+                            break;
+                    }
+                }
+
+                path = stack.pop();
+            }
+        }
     }
 
     public boolean overrideProperty(String propertyName, String propertyValue) throws XMLStreamException {
@@ -378,7 +455,7 @@ public class PomManipulator {
         sb.append("    <dependency>\n");
         sb.append(String.format("                <groupId>%s</groupId>\n", artifact.getGroupId()));
         sb.append(String.format("                <artifactId>%s</artifactId>\n", artifact.getArtifactId()));
-        sb.append(String.format("                <version>%s</version> <!-- originally %s -->\n", artifact.getVersionString(), oldVersion));
+        sb.append(String.format("                <version>%s</version> <!-- Original version: %s -->\n", artifact.getVersionString(), oldVersion));
         if (artifact.getClassifier() != null) {
             sb.append(String.format("                <classifier>%s</classifier>\n", artifact.getClassifier()));
         }
