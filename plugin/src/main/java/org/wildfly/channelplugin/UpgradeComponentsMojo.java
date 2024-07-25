@@ -121,7 +121,7 @@ public class UpgradeComponentsMojo extends AbstractChannelMojo {
      * If true, upgraded versions would be inlined in the dependency version element, possibly replacing a property
      * reference if it was originally used. If false, the property would be updated instead (less robust option).
      */
-    @Parameter(property = "inlineUpgradedVersions", defaultValue = "true")
+    @Parameter(property = "inlineUpgradedVersions", defaultValue = "false")
     boolean inlineUpgradedVersions;
 
     /**

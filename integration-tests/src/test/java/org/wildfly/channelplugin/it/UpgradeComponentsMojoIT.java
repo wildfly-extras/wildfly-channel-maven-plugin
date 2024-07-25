@@ -37,7 +37,6 @@ public class UpgradeComponentsMojoIT {
     @SystemProperty(value = "localRepository", content = "${maven.repo.local}")
     @SystemProperty(value = "remoteRepositories", content = "file://${maven.repo.local}")
     @SystemProperty(value = "ignoreStreams", content = "org.jboss:ignored-dep")
-    @SystemProperty(value = "inlineUpgradedVersions", content = "false")
     @MavenTest
     void basic_project_test_case(MavenExecutionResult result) {
         assertThat(result).isSuccessful();
@@ -94,7 +93,6 @@ public class UpgradeComponentsMojoIT {
      */
     @MavenGoal("${project.groupId}:wildfly-channel-maven-plugin:${project.version}:upgrade")
     @SystemProperty(value = "manifestFile", content = "manifest.yaml")
-    @SystemProperty(value = "inlineUpgradedVersions", content = "false")
     @MavenTest
     void eap_bom_test_case(MavenExecutionResult result) throws MalformedURLException {
         assertThat(result).isSuccessful();
@@ -134,7 +132,6 @@ public class UpgradeComponentsMojoIT {
     @MavenGoal("${project.groupId}:wildfly-channel-maven-plugin:${project.version}:upgrade")
     @SystemProperty(value = "manifestFile", content = "manifest.yaml")
     @SystemProperty(value = "overrideProperties", content = "undertow.version=2.2.5.Final-Overridden")
-    @SystemProperty(value = "inlineUpgradedVersions", content = "false")
     @MavenTest
     void override_property_test_case(MavenExecutionResult result) {
         assertThat(result).isSuccessful();
@@ -159,7 +156,6 @@ public class UpgradeComponentsMojoIT {
     @MavenGoal("${project.groupId}:wildfly-channel-maven-plugin:${project.version}:upgrade")
     @SystemProperty(value = "manifestFile", content = "manifest.yaml")
     @SystemProperty(value = "overrideDependencies", content = "io.undertow:undertow-core:2.2.5.Final-Overridden")
-    @SystemProperty(value = "inlineUpgradedVersions", content = "false")
     @MavenTest
     void override_dependency_test_case(MavenExecutionResult result) {
         assertThat(result).isSuccessful();
@@ -184,7 +180,6 @@ public class UpgradeComponentsMojoIT {
      */
     @MavenGoal("${project.groupId}:wildfly-channel-maven-plugin:${project.version}:upgrade")
     @SystemProperty(value = "manifestFile", content = "manifest.yaml")
-    @SystemProperty(value = "inlineUpgradedVersions", content = "false")
     @MavenTest
     void external_properties_test_case(MavenExecutionResult result) {
         assertThat(result).isSuccessful();
@@ -204,6 +199,7 @@ public class UpgradeComponentsMojoIT {
 
     @MavenGoal("${project.groupId}:wildfly-channel-maven-plugin:${project.version}:upgrade")
     @SystemProperty(value = "manifestFile", content = "manifest.yaml")
+    @SystemProperty(value = "inlineUpgradedVersions", content = "true")
     @MavenTest
     void inline_override_test_case(MavenExecutionResult result) {
         assertThat(result).isSuccessful();
