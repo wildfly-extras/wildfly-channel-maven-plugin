@@ -53,6 +53,12 @@ public class EditManifestMojo extends AbstractMojo {
     @Parameter(name="manifestRequirements")
     private List<Requirement> manifestRequirements;
 
+    /**
+     * Optional logicalVersion of the generated manifest.
+     */
+    @Parameter(name="manifestLogicalVersion")
+    private String manifestLogicalVersion;
+
     @Override
     public void execute() throws MojoExecutionException {
         final Path streamsManifestFile = Path.of(manifestPath);
@@ -88,6 +94,7 @@ public class EditManifestMojo extends AbstractMojo {
         final ChannelManifest combinedManifest = new ChannelManifest(source.getSchemaVersion(),
                 manifestName,
                 manifestId,
+                manifestLogicalVersion,
                 manifestDescription,
                 requirements,
                 source.getStreams());

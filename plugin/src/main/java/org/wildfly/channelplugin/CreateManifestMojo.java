@@ -20,6 +20,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.TreeSet;
@@ -61,6 +62,12 @@ public class CreateManifestMojo extends AbstractMojo {
      */
     @Parameter(name="manifestDescription", property = "manifestDescription")
     private String manifestDescription;
+
+    /**
+     * Optional logicalVersion of the generated manifest.
+     */
+    @Parameter(name="manifestLogicalVersion", property = "manifestLogicalVersion")
+    private String manifestLogicalVersion;
 
     @Inject
     private MavenProject project;
@@ -125,7 +132,7 @@ public class CreateManifestMojo extends AbstractMojo {
         }
 
 
-        final ChannelManifest channelManifest = new ChannelManifest(manifestName, manifestId, manifestDescription, streams);
+        final ChannelManifest channelManifest = new ChannelManifest(manifestName, manifestId, manifestLogicalVersion, manifestDescription, Collections.emptyList(), streams);
 
         try {
             final String yaml = ChannelManifestMapper.toYaml(channelManifest);
