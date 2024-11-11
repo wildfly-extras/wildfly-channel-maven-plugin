@@ -27,6 +27,7 @@ import javax.inject.Inject;
 import java.io.IOException;
 import java.net.MalformedURLException;
 import java.net.URL;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -104,7 +105,8 @@ public abstract class AbstractChannelMojo extends AbstractMojo {
                         channelFilePath = Path.of(mavenSession.getExecutionRootDirectory()).resolve(channelFilePath);
                     }
                     getLog().info("Reading channel file " + channelFilePath);
-                    channels.add(ChannelMapper.from(channelFilePath.toUri().toURL()));
+                    String yaml = Files.readString(channelFilePath);
+                    channels.addAll(ChannelMapper.fromString(yaml));
                 }
             }
             if (StringUtils.isNotBlank(channelGAV)) {
@@ -140,6 +142,8 @@ public abstract class AbstractChannelMojo extends AbstractMojo {
             }
         } catch (MalformedURLException e) {
             throw new MojoExecutionException("Can't parse the channel or manifest file path", e);
+        } catch (IOException e) {
+            throw new MojoExecutionException("Can't read channel metadata file", e);
         }
 
         if (!remoteRepositories.isEmpty()) {

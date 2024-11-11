@@ -1,0 +1,24 @@
+---
+schemaVersion: "2.0.0"
+name: "eap-xp-5.0-channel"
+repositories:
+  - id: "Brew"
+    url: "https://download.eng.bos.redhat.com/brewroot/repos/jb-eap-8.0-maven-build/latest/maven/"
+manifest:
+  maven:
+    groupId: "org.jboss.eap.channels"
+    artifactId: "eap-xp-5.0"
+    version: "1.0.0"
+noStreamStrategy: "none"
+---
+schemaVersion: "2.0.0"
+name: "eap-8.0-channel"
+repositories:
+  - id: "Brew"
+    url: "https://download.eng.bos.redhat.com/brewroot/repos/jb-eap-8.0-maven-build/latest/maven/"
+manifest:
+  maven:
+    groupId: "org.jboss.eap.channels"
+    artifactId: "eap-8.0"
+    version: "1.0.0"
+noStreamStrategy: "none"

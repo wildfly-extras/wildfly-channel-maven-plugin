@@ -136,6 +136,12 @@
             </exclusions>
         </dependency>
 
+        <dependency>
+            <groupId>io.smallrye</groupId>
+            <artifactId>jandex</artifactId>
+            <version>${version.jandex}</version>
+        </dependency>
+
         <!-- Dependency tree generation -->
         <dependency>
             <groupId>org.apache.maven.shared</groupId>
@@ -164,9 +170,9 @@
             <scope>test</scope>
         </dependency>
         <dependency>
-            <groupId>io.smallrye</groupId>
-            <artifactId>jandex</artifactId>
-            <version>${version.jandex}</version>
+            <groupId>org.mockito</groupId>
+            <artifactId>mockito-core</artifactId>
+            <scope>test</scope>
         </dependency>
     </dependencies>
 
