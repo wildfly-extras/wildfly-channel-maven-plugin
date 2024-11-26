@@ -22,6 +22,7 @@ import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.stream.Collectors;
@@ -69,8 +70,11 @@ public class CreateManifestMojo extends AbstractMojo {
     @Parameter(name="manifestLogicalVersion", property = "manifestLogicalVersion")
     private String manifestLogicalVersion;
 
-    @Inject
-    private MavenProject project;
+    /**
+     * Comma separated list of module G:As that should not be processed.
+     */
+    @Parameter(property = "ignoreModules")
+    List<String> ignoreModules;
 
     @Inject
     private MavenProjectHelper projectHelper;
@@ -79,11 +83,17 @@ public class CreateManifestMojo extends AbstractMojo {
     @Override
     public void execute() throws MojoExecutionException, MojoFailureException {
         final Set<Artifact> artifacts = new HashSet<>();
-        artifacts.addAll(mavenProject.getArtifacts());
-        artifacts.add(mavenProject.getArtifact());
+        if (!isIgnoredModule(mavenProject.getGroupId(), mavenProject.getArtifactId())) {
+            artifacts.addAll(mavenProject.getArtifacts());
+            artifacts.add(mavenProject.getArtifact());
+        }
 
         // include children modules
         for (MavenProject project : mavenProject.getCollectedProjects()) {
+            if (isIgnoredModule(project.getGroupId(), project.getArtifactId())) {
+                getLog().info(String.format("Skipping module %s:%s", project.getGroupId(), project.getArtifact()));
+                continue;
+            }
             if (getLog().isDebugEnabled()) {
                 getLog().debug("Including child module: " + project.getId());
             }
@@ -137,17 +147,23 @@ public class CreateManifestMojo extends AbstractMojo {
         try {
             final String yaml = ChannelManifestMapper.toYaml(channelManifest);
             final String manifestFileName = String.format("%s-%s-%s.%s",
-                    project.getArtifactId(), project.getVersion(),
+                    mavenProject.getArtifactId(), mavenProject.getVersion(),
                     ChannelManifest.CLASSIFIER, ChannelManifest.EXTENSION);
-            final Path outputDirectory = Path.of(project.getBuild().getDirectory());
+            final Path outputDirectory = Path.of(mavenProject.getBuild().getDirectory());
             if (!Files.exists(outputDirectory)) {
                 Files.createDirectory(outputDirectory);
             }
-            final Path outputPath = Path.of(project.getBuild().getDirectory(), manifestFileName);
+            final Path outputPath = Path.of(mavenProject.getBuild().getDirectory(), manifestFileName);
             Files.writeString(outputPath, yaml, StandardCharsets.UTF_8);
-            projectHelper.attachArtifact(project, ChannelManifest.EXTENSION, ChannelManifest.CLASSIFIER, outputPath.toFile());
+            projectHelper.attachArtifact(mavenProject, ChannelManifest.EXTENSION, ChannelManifest.CLASSIFIER, outputPath.toFile());
         } catch (IOException e) {
             throw new MojoExecutionException("Unable to serialize manifest", e);
         }
     }
+
+    private boolean isIgnoredModule(String groupId, String artifactId) {
+        return ignoreModules.contains(groupId + ":" + artifactId)
+                || (groupId.equals(mavenProject.getGroupId()) && ignoreModules.contains(":" + artifactId));
+    }
+
 }
