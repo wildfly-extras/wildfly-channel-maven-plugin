@@ -163,7 +163,6 @@ public class UpgradeComponentsMojo extends AbstractChannelMojo {
 
     private final List<ProjectRef> ignoredStreams = new ArrayList<>();
     private final List<ProjectRef> unignoredStreams = new ArrayList<>();
-    private final List<ProjectRef> ignoredModules = new ArrayList<>();
     private Set<ProjectVersionRef> projectGavs;
     private final HashMap<Pair<String, String>, PomManipulator> manipulators = new HashMap<>();
     private PomManipulator rootManipulator;
@@ -178,7 +177,6 @@ public class UpgradeComponentsMojo extends AbstractChannelMojo {
 
         ignoreStreams.forEach(ga -> ignoredStreams.add(SimpleProjectRef.parse(ga)));
         dontIgnoreStreams.forEach(ga -> unignoredStreams.add(SimpleProjectRef.parse(ga)));
-        ignoreModules.forEach(ga -> ignoredModules.add(SimpleProjectRef.parse(ga)));
     }
 
     /**
@@ -215,8 +213,7 @@ public class UpgradeComponentsMojo extends AbstractChannelMojo {
 
             // process project modules
             for (Project project: pmeProjects) {
-                ProjectRef moduleGA = project.getKey().asProjectRef();
-                if (ignoredModules.contains(moduleGA)) {
+                if (isIgnoredModule(project.getGroupId(), project.getArtifactId())) {
                     getLog().info(String.format("Skipping module %s:%s", project.getGroupId(), project.getArtifactId()));
                     continue;
                 }
@@ -536,7 +533,10 @@ public class UpgradeComponentsMojo extends AbstractChannelMojo {
         Map<ArtifactRef, Collection<ProjectRef>> dependenciesToInject = new HashMap<>();
         ArrayList<MavenProject> projects = new ArrayList<>();
         projects.add(mavenProject);
-        projects.addAll(mavenProject.getCollectedProjects());
+        List<MavenProject> collectedProjects = mavenProject.getCollectedProjects().stream()
+                .filter(p -> !isIgnoredModule(p.getGroupId(), p.getArtifactId()))
+                .collect(Collectors.toList());
+        projects.addAll(collectedProjects);
         for (MavenProject module: projects) {
 
             // Collect exclusions from the effective POM
@@ -614,6 +614,11 @@ public class UpgradeComponentsMojo extends AbstractChannelMojo {
             }
         });
 
+    }
+
+    private boolean isIgnoredModule(String groupId, String artifactId) {
+        return ignoreModules.contains(groupId + ":" + artifactId)
+                || (groupId.equals(mavenProject.getGroupId()) && ignoreModules.contains(":" + artifactId));
     }
 
     /**
