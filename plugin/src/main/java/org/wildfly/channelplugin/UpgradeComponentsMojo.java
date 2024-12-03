@@ -134,6 +134,9 @@ public class UpgradeComponentsMojo extends AbstractChannelMojo {
     @Parameter(property = "ignoreTestDependencies", defaultValue = "true")
     boolean ignoreTestDependencies;
 
+    @Parameter(property = "ignoreScopes", defaultValue = "test")
+    Set<String> ignoreScopes = new HashSet<>();
+
     /**
      * When a dependency is defined with version string referencing a property, and that property is defined in a parent
      * pom outside the project, the property would be injected into a pom where the dependency is defined, if this
@@ -177,6 +180,9 @@ public class UpgradeComponentsMojo extends AbstractChannelMojo {
 
         ignoreStreams.forEach(ga -> ignoredStreams.add(SimpleProjectRef.parse(ga)));
         dontIgnoreStreams.forEach(ga -> unignoredStreams.add(SimpleProjectRef.parse(ga)));
+        if (ignoreTestDependencies) {
+            ignoreScopes.add("test");
+        }
     }
 
     /**
@@ -489,7 +495,7 @@ public class UpgradeComponentsMojo extends AbstractChannelMojo {
                     continue;
                 }
             }
-            if ("test".equals(dependency.getScope()) && ignoreTestDependencies) {
+            if (ignoreScopes.contains(dependency.getScope())) {
                 getLog().info("Skipping dependency (ignored scope): "
                         + resolvedArtifact.asProjectVersionRef().toString());
                 continue;
@@ -563,8 +569,8 @@ public class UpgradeComponentsMojo extends AbstractChannelMojo {
                 if (declaredDependencies.contains(artifact.asProjectRef())) {
                     return;
                 }
-                // Ignore test scope dependencies.
-                if ("test".equals(node.getArtifact().getScope()) && ignoreTestDependencies) {
+                // Ignore specific scopes.
+                if (ignoreScopes.contains(node.getArtifact().getScope())) {
                     // Ignore test scope undeclared dependencies entirely.
                     return;
                 }
