@@ -2,7 +2,6 @@ package org.wildfly.channelplugin;
 
 import org.apache.commons.lang3.StringUtils;
 import org.apache.maven.execution.MavenSession;
-import org.apache.maven.model.RepositoryBase;
 import org.apache.maven.plugin.AbstractMojo;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugins.annotations.Mojo;
@@ -25,8 +24,6 @@ import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
-import java.util.stream.Collectors;
 
 /**
  * Inject repositories into project pom.xml. Either use `-DfromChannelFile=path/to/channel.yaml` to inject repositories
@@ -113,13 +110,12 @@ public class InjectRepositoriesMojo extends AbstractMojo {
     }
 
     static void insertRepositories(Project project, PomManipulator manipulator, Map<String, String> repositories) {
-        Set<String> existingRepositories = project.getModel().getRepositories().stream()
-                .map(RepositoryBase::getUrl)
-                .collect(Collectors.toSet());
-        existingRepositories.add(CENTRAL_URL);
+        final Map<String, String> existingRepositories = new HashMap<>();
+        existingRepositories.put("central", CENTRAL_URL);
+        project.getModel().getRepositories().forEach(r -> existingRepositories.put(r.getId(), r.getUrl()));
 
         repositories.forEach((id, url) -> {
-            if (!existingRepositories.contains(url)) {
+            if (!existingRepositories.containsValue(url) && !existingRepositories.containsKey(id)) {
                 try {
                     logger.infof("Inserting repository %s", url);
                     manipulator.injectRepository(id, url);
@@ -131,13 +127,12 @@ public class InjectRepositoriesMojo extends AbstractMojo {
             }
         });
 
-        Set<String> existingPluginRepositories = project.getModel().getPluginRepositories().stream()
-                .map(RepositoryBase::getUrl)
-                .collect(Collectors.toSet());
-        existingPluginRepositories.add(CENTRAL_URL);
+        final Map<String, String> existingPluginRepositories = new HashMap<>();
+        existingPluginRepositories.put("central", CENTRAL_URL);
+        project.getModel().getPluginRepositories().forEach(r -> existingPluginRepositories.put(r.getId(), r.getUrl()));
 
         repositories.forEach((id, url) -> {
-            if (!existingPluginRepositories.contains(url)) {
+            if (!existingPluginRepositories.containsValue(url) && !existingPluginRepositories.containsKey(id)) {
                 try {
                     logger.infof("Inserting plugin repository %s", url);
                     manipulator.injectPluginRepository(id, url);
