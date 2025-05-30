@@ -3,7 +3,6 @@ package org.wildfly.channelplugin;
 import groovy.lang.Tuple;
 import groovy.lang.Tuple3;
 import org.apache.commons.lang3.tuple.Pair;
-import org.apache.maven.artifact.versioning.DefaultArtifactVersion;
 import org.apache.maven.model.Dependency;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugins.annotations.Mojo;
@@ -15,8 +14,6 @@ import org.apache.maven.shared.dependency.graph.DependencyGraphBuilder;
 import org.apache.maven.shared.dependency.graph.DependencyGraphBuilderException;
 import org.apache.maven.shared.dependency.graph.DependencyNode;
 import org.apache.maven.shared.dependency.graph.traversal.CollectingDependencyNodeVisitor;
-import org.codehaus.mojo.versions.ordering.MavenVersionComparator;
-import org.codehaus.mojo.versions.ordering.VersionComparator;
 import org.commonjava.maven.atlas.ident.ref.ArtifactRef;
 import org.commonjava.maven.atlas.ident.ref.ProjectRef;
 import org.commonjava.maven.atlas.ident.ref.ProjectVersionRef;
@@ -32,6 +29,7 @@ import org.wildfly.channel.UnresolvedMavenArtifactException;
 import org.wildfly.channel.VersionResult;
 import org.wildfly.channelplugin.manipulation.PomManipulator;
 import org.wildfly.channelplugin.utils.PMEUtils;
+import org.wildfly.channelplugin.utils.VersionComparator;
 import org.wildfly.channeltools.util.VersionUtils;
 
 import javax.inject.Inject;
@@ -41,6 +39,7 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -64,7 +63,7 @@ import static org.wildfly.channeltools.util.ConversionUtils.toProjectRefs;
 @Mojo(name = "upgrade", requiresDirectInvocation = true)
 public class UpgradeComponentsMojo extends AbstractChannelMojo {
 
-    private final static VersionComparator VERSION_COMPARATOR = new MavenVersionComparator();
+    private final static Comparator<String> VERSION_COMPARATOR = new VersionComparator();
 
     /**
      * Comma separated list of dependency G:As that should not be upgraded.
@@ -688,6 +687,6 @@ public class UpgradeComponentsMojo extends AbstractChannelMojo {
     }
 
     private static int compareVersions(String v1, String v2) {
-        return VERSION_COMPARATOR.compare(new DefaultArtifactVersion(v1.trim()), new DefaultArtifactVersion(v2.trim()));
+        return VERSION_COMPARATOR.compare(v1.trim(), v2.trim());
     }
 }
