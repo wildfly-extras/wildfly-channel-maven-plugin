@@ -1,7 +1,5 @@
 package org.wildfly.channelplugin;
 
-import groovy.lang.Tuple;
-import groovy.lang.Tuple3;
 import org.apache.commons.lang3.tuple.Pair;
 import org.apache.maven.model.Dependency;
 import org.apache.maven.plugin.MojoExecutionException;
@@ -163,13 +161,15 @@ public class UpgradeComponentsMojo extends AbstractChannelMojo {
     @Inject
     ManipulationSession manipulationSession;
 
-    private final List<ProjectRef> ignoredStreams = new ArrayList<>();
-    private final List<ProjectRef> unignoredStreams = new ArrayList<>();
+    private final Set<ProjectRef> ignoredStreams = new HashSet<>();
+    private final Set<ProjectRef> unignoredStreams = new HashSet<>();
     private Set<ProjectVersionRef> projectGavs;
-    private final HashMap<Pair<String, String>, PomManipulator> manipulators = new HashMap<>();
+    private final Map<Pair<String, String>, PomManipulator> manipulators = new HashMap<>();
     private PomManipulator rootManipulator;
-    private final HashMap<Pair<Project, String>, String> upgradedProperties = new HashMap<>();
+    private final Map<Pair<Project, String>, String> lockedProperties = new HashMap<>();
     private final Set<ProjectRef> declaredDependencies = new HashSet<>();
+    private final Set<String> overriddenProperties = new HashSet<>(); // Names of properties that were explicitly overridden via `overrideProperties` parameter.
+    private final Set<Dependency> overriddenDependencies = new HashSet<>(); // Collected dependency instances that were explicitly overridden via `overrideDependencies` parameter.
 
     /**
      * This includes pre-processing of input parameters.
@@ -269,106 +269,131 @@ public class UpgradeComponentsMojo extends AbstractChannelMojo {
         Map<ArtifactRef, Dependency> resolvedProjectDependencies = collectResolvedProjectDependencies(pmeProject);
         resolvedProjectDependencies.keySet().forEach(a -> declaredDependencies.add(a.asProjectRef()));
 
-        List<String> overriddenProperties = performHardPropertyOverrides(manipulator);
-        List<Dependency> overriddenDependencies = performHardDependencyOverrides(resolvedProjectDependencies, manipulator);
+        performHardPropertyOverrides(manipulator);
+        performHardDependencyOverrides(resolvedProjectDependencies, manipulator);
+        processDependencies(manipulator, pmeProject, resolvedProjectDependencies);
+    }
 
-        List<Tuple3<Dependency, ArtifactRef, String>> dependenciesToUpgrade = findDependenciesToUpgrade(resolvedProjectDependencies);
-        for (Tuple3<Dependency, ArtifactRef, String> upgrade: dependenciesToUpgrade) {
-            String newVersion = upgrade.getV3();
-            Dependency locatedDependency = upgrade.getV1();
-            ArtifactRef resolvedDependency = upgrade.getV2();
+    private void processDependencies(PomManipulator manipulator, Project pmeProject,
+                                     Map<ArtifactRef, Dependency> resolvedProjectDependencies)
+            throws XMLStreamException {
 
-            @SuppressWarnings("UnnecessaryLocalVariable")
-            Dependency d = locatedDependency;
+        for (Map.Entry<ArtifactRef, Dependency> entry: resolvedProjectDependencies.entrySet()) {
+            Dependency dependency = entry.getValue();
+            ArtifactRef originalArtifact = entry.getKey();
+            String originalVersion = originalArtifact.getVersionString().trim();
+            Optional<String> channelVersionOpt = resolveChannelVersion(originalArtifact);
+            if (channelVersionOpt.isEmpty()) {
+                // Channel doesn't resolve this, nothing to do
+                continue;
+            }
+            String channelVersion = channelVersionOpt.get();
 
-            if (overriddenDependencies.contains(locatedDependency)) {
-                // if there was a hard version override, the dependency is not processed again
+            Objects.requireNonNull(originalArtifact);
+            Objects.requireNonNull(dependency);
+
+            if (isIgnoredDependency(originalArtifact, dependency)) {
                 continue;
             }
 
-            if (VersionUtils.isProperty(locatedDependency.getVersion()) && !inlineUpgradedVersions) { // dependency version is set from a property
-                String originalVersionString = locatedDependency.getVersion();
-                String versionPropertyName = VersionUtils.extractPropertyName(originalVersionString);
-
-                if (overriddenProperties.contains(versionPropertyName)) {
-                    // this property has been overridden based on `overrideProperties` parameter, do not process again
-                    continue;
+            if (VersionUtils.isProperty(dependency.getVersion()) && !inlineUpgradedVersions) {
+                // Dependency version is set from a property
+                processDependencyWithVersionProperty(pmeProject, manipulator, dependency, originalVersion, channelVersion);
+            } else {
+                // Dependency version is to be written directly into the version element
+                if (shouldUpgrade(originalVersion, channelVersion)) {
+                    manipulator.overrideDependencyVersionWithComment(originalArtifact, channelVersion);
                 }
-
-                Pair<Project, String> projectProperty = followProperties(pmeProject, versionPropertyName);
-                if (projectProperty == null) {
-                    Pair<String, String> externalProperty = resolveExternalProperty(mavenProject, versionPropertyName);
-                    if (externalProperty != null) {
-                        projectProperty = Pair.of(null, externalProperty.getLeft());
-                    }
-                }
-
-                if (projectProperty == null) {
-                    ChannelPluginLogger.LOGGER.errorf(
-                            "Unable to upgrade %s:%s:%s to '%s', can't locate property '%s' in the project",
-                            d.getGroupId(), d.getArtifactId(), d.getVersion(), newVersion,
-                            versionPropertyName);
-                    continue;
-                }
-
-                Project targetProject = projectProperty.getLeft();
-                String targetPropertyName = projectProperty.getRight();
-
-                if (isIgnoredProperty(targetPropertyName)) {
-                    getLog().info(String.format("Ignoring property '%s'", targetPropertyName));
-                    continue;
-                }
-
-                if (upgradedProperties.containsKey(projectProperty)) {
-                    if (!upgradedProperties.get(projectProperty).trim().equals(newVersion.trim())) {
-                        // property has already been changed to different value
-                        String propertyName = projectProperty.getRight();
-                        String currentPropertyValue = upgradedProperties.get(projectProperty);
-                        getLog().warn(String.format("Inlining version string for %s:%s:%s, new version '%s'. " +
-                                "The original version property '%s' has already been modified to '%s'.",
-                                d.getGroupId(), d.getArtifactId(), d.getVersion(), newVersion, propertyName,
-                                currentPropertyValue));
-                        manipulator.overrideDependencyVersion(d.getGroupId(), d.getArtifactId(),
-                                originalVersionString, newVersion);
-                        continue; // do not override the property again
-                    }
-                }
-
-                // get manipulator for the module where the target property is located
-                upgradedProperties.put(projectProperty, newVersion);
-
-                if (targetProject != null) {
-                    // property has been located in some project module
-                    // => override the located property in the module where it has been located
-                    PomManipulator targetManipulator = manipulators.get(
-                            Pair.of(targetProject.getGroupId(), targetProject.getArtifactId()));
-                    targetManipulator.overrideProperty(targetPropertyName, newVersion);
-                } else if (injectExternalProperties) {
-                    // property has been located in external parent pom
-                    // => inject the property into current module
-                    PomManipulator targetManipulator = manipulators.get(
-                            Pair.of(pmeProject.getGroupId(), pmeProject.getArtifactId()));
-                    targetManipulator.injectProperty(targetPropertyName, newVersion);
-                } else {
-                    getLog().warn(String.format("Can't upgrade %s:%s:%s to %s, property %s is not defined in the " +
-                                    "scope of the project (consider enabling the injectExternalProperties parameter).",
-                            d.getGroupId(), d.getArtifactId(), d.getVersion(), newVersion, targetPropertyName));
-                }
-            } else { // dependency version is inlined in version element, can be directly overwritten
-                manipulator.overrideDependencyVersionWithComment(resolvedDependency, newVersion);
             }
         }
+    }
 
+    private void processDependencyWithVersionProperty(Project pmeProject, PomManipulator manipulator, Dependency dependency,
+                                                      String originalVersion, String newVersion) throws XMLStreamException {
+        @SuppressWarnings("UnnecessaryLocalVariable")
+        Dependency d = dependency;
+        String originalVersionString = dependency.getVersion();
+        String versionPropertyName = VersionUtils.extractPropertyName(originalVersionString);
+
+        /*if (overriddenProperties.contains(versionPropertyName)) {
+            // this property has been overridden based on `overrideProperties` parameter, do not process again
+            return;
+        }*/
+
+        Pair<Project, String> mavenPropertyRef = lookupMavenProperty(pmeProject, versionPropertyName);
+
+        if (mavenPropertyRef == null) {
+            ChannelPluginLogger.LOGGER.errorf(
+                    "Unable to upgrade %s:%s:%s to '%s', can't locate property '%s' in the project",
+                    d.getGroupId(), d.getArtifactId(), d.getVersion(), newVersion,
+                    versionPropertyName);
+            return;
+        }
+
+        String targetPropertyName = mavenPropertyRef.getRight();
+
+        if (isIgnoredProperty(targetPropertyName)) {
+            getLog().info(String.format("Ignoring property '%s'", targetPropertyName));
+            return;
+        }
+
+        if (!lockedProperties.containsKey(mavenPropertyRef)) {
+            lockedProperties.put(mavenPropertyRef, newVersion);
+            if (shouldUpgrade(originalVersion, newVersion)) {
+                // overwrite property
+                updateVersionProperty(pmeProject, dependency, mavenPropertyRef, newVersion);
+            }
+        } else {
+            if (!newVersion.equals(lockedProperties.get(mavenPropertyRef))) {
+                // overwrite dependency version inline
+                manipulator.overrideDependencyVersion(d.getGroupId(), d.getArtifactId(),
+                        originalVersionString, newVersion);
+            }
+        }
+    }
+
+    private void updateVersionProperty(Project pmeProject, Dependency dependency, Pair<Project, String> mavenPropertyRef, String newVersion)
+            throws XMLStreamException {
+        Project targetProject = mavenPropertyRef.getLeft();
+        String targetPropertyName = mavenPropertyRef.getRight();
+
+        if (targetProject != null) {
+            // property has been located in some project module
+            // => override the located property in the module where it has been located
+            PomManipulator targetManipulator = manipulators.get(
+                    Pair.of(targetProject.getGroupId(), targetProject.getArtifactId()));
+            targetManipulator.overrideProperty(targetPropertyName, newVersion);
+        } else if (injectExternalProperties) {
+            // property has been located in external parent pom
+            // => inject the property into current module
+            PomManipulator targetManipulator = manipulators.get(
+                    Pair.of(pmeProject.getGroupId(), pmeProject.getArtifactId()));
+            targetManipulator.injectProperty(targetPropertyName, newVersion);
+        } else {
+            getLog().warn(String.format("Can't upgrade %s:%s:%s to %s, property %s is not defined in the " +
+                            "scope of the project (consider enabling the injectExternalProperties parameter).",
+                    dependency.getGroupId(), dependency.getArtifactId(), dependency.getVersion(), newVersion,
+                    targetPropertyName));
+        }
+    }
+
+    private Pair<Project, String> lookupMavenProperty(Project pmeProject, String propertyName) {
+        Pair<Project, String> mavenPropertyRef = followProperties(pmeProject, propertyName);
+        if (mavenPropertyRef == null) {
+            Pair<String, String> externalProperty = resolveExternalProperty(mavenProject, propertyName);
+            if (externalProperty != null) {
+                mavenPropertyRef = Pair.of(null, externalProperty.getLeft());
+            }
+        }
+        return mavenPropertyRef;
     }
 
     /**
      * Performs hard property overrides based on the `overrideProperties` parameter input.
      *
      * @param manipulator manipulator for current module
-     * @return list of overridden properties
      */
-    private List<String> performHardPropertyOverrides(PomManipulator manipulator) throws XMLStreamException {
-        ArrayList<String> overriddenProperties = new ArrayList<>();
+    private void performHardPropertyOverrides(PomManipulator manipulator) throws XMLStreamException {
         for (String nameValue: overrideProperties) {
             String[] split = nameValue.split("=");
             if (split.length != 2) {
@@ -382,7 +407,6 @@ public class UpgradeComponentsMojo extends AbstractChannelMojo {
                 overriddenProperties.add(propertyName);
             }
         }
-        return overriddenProperties;
     }
 
     /**
@@ -391,19 +415,16 @@ public class UpgradeComponentsMojo extends AbstractChannelMojo {
      *
      * @param resolvedProjectDependencies collection of all resolved dependencies in the module
      * @param manipulator manipulator for current module
-     * @return list of updated dependencies
      */
-    private List<Dependency> performHardDependencyOverrides(Map<ArtifactRef, Dependency> resolvedProjectDependencies,
+    private void performHardDependencyOverrides(Map<ArtifactRef, Dependency> resolvedProjectDependencies,
             PomManipulator manipulator) throws XMLStreamException {
-        List<Dependency> overriddenDependencies = new ArrayList<>();
         for (Dependency dependency: resolvedProjectDependencies.values()) {
-            Optional<String> overridenVersion = findOverriddenVersion(dependency);
-            if (overridenVersion.isPresent()) {
-                manipulator.overrideDependencyVersion(toArtifactRef(dependency), overridenVersion.get());
+            Optional<String> overriddenVersion = findOverriddenVersion(dependency);
+            if (overriddenVersion.isPresent()) {
+                manipulator.overrideDependencyVersion(toArtifactRef(dependency), overriddenVersion.get());
                 overriddenDependencies.add(dependency);
             }
         }
-        return overriddenDependencies;
     }
 
     private Optional<String> findOverriddenVersion(Dependency dependency) {
@@ -422,6 +443,7 @@ public class UpgradeComponentsMojo extends AbstractChannelMojo {
         return Optional.empty();
     }
 
+    @SuppressWarnings("RedundantIfStatement")
     private boolean isIgnoredProperty(String propertyName) {
         if (ignoreProperties.contains(propertyName)) {
             return true;
@@ -430,6 +452,10 @@ public class UpgradeComponentsMojo extends AbstractChannelMojo {
             if (propertyName.startsWith(prefix)) {
                 return true;
             }
+        }
+        if (overriddenProperties.contains(propertyName)) {
+            // this property has been overridden based on `overrideProperties` parameter, do not process again
+            return true;
         }
         return false;
     }
@@ -445,82 +471,87 @@ public class UpgradeComponentsMojo extends AbstractChannelMojo {
             getLog().debug("No dependencies found in " + pmeProject.getArtifactId());
         }
 
-        return projectDependencies;
+        // If the version was controlled by a property, it should have been resolved into a specific version string
+        // by now.
+        // PME doesn't seem to resolve properties defined in parent poms, so now we have a chance to fix that.
+        // If the property could still not be resolved from parent poms, ignore this dependency.
+        Map<ArtifactRef, Dependency> correctedDependencies = new HashMap<>();
+        projectDependencies.forEach((artifact, dependency) -> {
+            if (VersionUtils.isProperty(artifact.getVersionString())) {
+                Pair<String, String> externalProperty = resolveExternalProperty(mavenProject,
+                        VersionUtils.extractPropertyName(artifact.getVersionString()));
+                if (externalProperty != null) {
+                    SimpleArtifactRef newArtifact = new SimpleArtifactRef(artifact.getGroupId(), artifact.getArtifactId(),
+                            externalProperty.getRight(), artifact.getType(), artifact.getClassifier());
+                    correctedDependencies.put(newArtifact, dependency);
+                } else {
+                    getLog().error("Following dependency uses a version property that could not be resolved: " + dependency.toString());
+                }
+            } else {
+                correctedDependencies.put(artifact, dependency);
+            }
+        });
+
+        return correctedDependencies;
     }
 
-    private List<Tuple3<Dependency, ArtifactRef, String>> findDependenciesToUpgrade(
-            Map<ArtifactRef, Dependency> resolvedProjectDependencies) {
-        List<Tuple3<Dependency, ArtifactRef, String>> dependenciesToUpgrade = new ArrayList<>();
-        for (Map.Entry<ArtifactRef, Dependency> entry : resolvedProjectDependencies.entrySet()) {
-            ArtifactRef resolvedArtifact = entry.getKey();
-            Dependency dependency = entry.getValue();
+    private boolean isIgnoredDependency(ArtifactRef artifact, Dependency dependency) {
+        // Ignore internal project dependencies (project submodules)
+        if (projectGavs.contains(artifact.asProjectVersionRef())) {
+            getLog().debug("Ignoring in-project dependency: "
+                    + artifact.asProjectVersionRef().toString());
+            return true;
+        }
 
-            Objects.requireNonNull(resolvedArtifact);
-            Objects.requireNonNull(dependency);
-
-            if (projectGavs.contains(resolvedArtifact.asProjectVersionRef())) {
-                getLog().debug("Ignoring in-project dependency: "
-                        + resolvedArtifact.asProjectVersionRef().toString());
-                continue;
+        // Ignore based on ignoreStreams / dontIgnoreStreams parameters
+        if (!unignoredStreams.contains(artifact.asProjectRef())) {
+            if (ignoredStreams.contains(artifact.asProjectRef())) {
+                getLog().info("Skipping dependency (ignored stream): "
+                        + artifact.asProjectVersionRef().toString());
+                return true;
             }
-            if (!unignoredStreams.contains(resolvedArtifact.asProjectRef())) {
-                if (ignoredStreams.contains(resolvedArtifact.asProjectRef())) {
-                    getLog().info("Skipping dependency (ignored stream): "
-                            + resolvedArtifact.asProjectVersionRef().toString());
-                    continue;
-                }
-                ProjectRef wildCardIgnoredProjectRef = new SimpleProjectRef(resolvedArtifact.getGroupId(), "*");
-                if (ignoredStreams.contains(wildCardIgnoredProjectRef)) {
-                    getLog().info("Skipping dependency (ignored stream): "
-                            + resolvedArtifact.asProjectVersionRef().toString());
-                    continue;
-                }
-            }
-            if (resolvedArtifact.getVersionString() == null) {
-                // this is not expected to happen
-                getLog().error("Resolved dependency has null version: " + resolvedArtifact);
-                continue;
-            }
-            if (VersionUtils.isProperty(resolvedArtifact.getVersionString())) {
-                // hack: PME doesn't seem to resolve properties from external parent poms
-                Pair<String, String> externalProperty = resolveExternalProperty(mavenProject,
-                        VersionUtils.extractPropertyName(resolvedArtifact.getVersionString()));
-                if (externalProperty != null) {
-                    resolvedArtifact = new SimpleArtifactRef(resolvedArtifact.getGroupId(), resolvedArtifact.getArtifactId(),
-                            externalProperty.getRight(), resolvedArtifact.getType(), resolvedArtifact.getClassifier());
-                } else {
-                    // didn't manage to resolve dependency version, this is not expected to happen
-                    getLog().error("Resolved dependency has version with property: " + resolvedArtifact);
-                    continue;
-                }
-            }
-            if (ignoreScopes.contains(dependency.getScope())) {
-                getLog().info("Skipping dependency (ignored scope): "
-                        + resolvedArtifact.asProjectVersionRef().toString());
-                continue;
-            }
-
-
-            try {
-                VersionResult versionResult = channelSession.findLatestMavenArtifactVersion(resolvedArtifact.getGroupId(),
-                        resolvedArtifact.getArtifactId(), resolvedArtifact.getType(), resolvedArtifact.getClassifier(),
-                        resolvedArtifact.getVersionString());
-                String channelVersion = versionResult.getVersion();
-
-                int comparison = compareVersions(channelVersion, resolvedArtifact.getVersionString());
-                if (comparison > 0 || (!doNotDowngrade && comparison < 0)) {
-                    getLog().info("Updating dependency " + resolvedArtifact.getGroupId()
-                            + ":" + resolvedArtifact.getArtifactId() + ":" + resolvedArtifact.getVersionString()
-                            + " to version " + channelVersion);
-                    dependenciesToUpgrade.add(Tuple.tuple(dependency, resolvedArtifact, channelVersion));
-                }
-            } catch (UnresolvedMavenArtifactException e) {
-                // this produces a lot of noise due to many of e.g. test artifacts not being managed by channels, so keep it
-                // at the debug level
-                getLog().debug("Can't resolve artifact: " + resolvedArtifact, e);
+            ProjectRef wildCardIgnoredProjectRef = new SimpleProjectRef(artifact.getGroupId(), "*");
+            if (ignoredStreams.contains(wildCardIgnoredProjectRef)) {
+                getLog().info("Skipping dependency (ignored stream): "
+                        + artifact.asProjectVersionRef().toString());
+                return true;
             }
         }
-        return dependenciesToUpgrade;
+
+        // Ignore based on scope
+        if (ignoreScopes.contains(dependency.getScope())) {
+            getLog().info("Skipping dependency (ignored scope): "
+                    + artifact.asProjectVersionRef().toString());
+            return true;
+        }
+
+        // Ignore if the dependency has been specifically overridden via the overrideDependencies parameter
+        if (overriddenDependencies.contains(dependency)) {
+            return true;
+        }
+
+        // Ignore if it was not possible to resolve the current dependency version
+        if (artifact.getVersionString() == null) {
+            // this is not expected to happen
+            getLog().error("Resolved dependency has null version: " + artifact);
+            return true;
+        }
+
+        return false;
+    }
+
+    private Optional<String> resolveChannelVersion(ArtifactRef artifactRef) {
+        try {
+            VersionResult versionResult = channelSession.findLatestMavenArtifactVersion(artifactRef.getGroupId(),
+                    artifactRef.getArtifactId(), artifactRef.getType(), artifactRef.getClassifier(),
+                    artifactRef.getVersionString());
+            return Optional.of(versionResult.getVersion());
+        } catch (UnresolvedMavenArtifactException e) {
+            // this produces a lot of noise due to many of e.g. test artifacts not being managed by channels, so keep it
+            // at the debug level
+            getLog().debug("Can't resolve artifact: " + artifactRef, e);
+            return Optional.empty();
+        }
     }
 
     /**
@@ -545,12 +576,7 @@ public class UpgradeComponentsMojo extends AbstractChannelMojo {
         for (MavenProject module: projects) {
 
             // Collect exclusions from the effective POM
-            Map<ArtifactRef, Collection<ProjectRef>> artifactExclusions = new HashMap<>();
-            List<Dependency> managedDependencies = Collections.emptyList();
-            if (module.getModel().getDependencyManagement() != null) {
-                managedDependencies = module.getModel().getDependencyManagement().getDependencies();
-            }
-            managedDependencies.forEach(dep -> artifactExclusions.put(toArtifactRef(dep), toProjectRefs(dep.getExclusions())));
+            Map<ArtifactRef, Collection<ProjectRef>> artifactExclusions = getDependencyExclusions(module);
 
             ProjectBuildingRequest buildingRequest =
                     new DefaultProjectBuildingRequest(mavenSession.getProjectBuildingRequest());
@@ -598,27 +624,35 @@ public class UpgradeComponentsMojo extends AbstractChannelMojo {
                 VersionResult versionResult = channelSession.findLatestMavenArtifactVersion(artifact.getGroupId(),
                         artifact.getArtifactId(), artifact.getType(), artifact.getClassifier(), artifact.getVersionString());
                 newVersion = versionResult.getVersion();
-                int comparison = compareVersions(newVersion, artifact.getVersionString());
-                if ((doNotDowngrade && comparison < 0) || comparison == 0) {
-                    return;
-                }
             } catch (NoStreamFoundException e) {
                 // No stream found -> dependency remains the same.
                 return;
             }
 
-            SimpleArtifactRef newDependency = new SimpleArtifactRef(artifact.getGroupId(), artifact.getArtifactId(),
-                    newVersion, artifact.getType(), artifact.getClassifier());
-            getLog().info(String.format("Injecting undeclared dependency: %s (original version was %s)", newDependency,
-                    artifact.getVersionString()));
+            if (shouldUpgrade(artifact.getVersionString(), newVersion)) {
+                SimpleArtifactRef newDependency = new SimpleArtifactRef(artifact.getGroupId(), artifact.getArtifactId(),
+                        newVersion, artifact.getType(), artifact.getClassifier());
+                getLog().info(String.format("Injecting undeclared dependency: %s (original version was %s)", newDependency,
+                        artifact.getVersionString()));
 
-            try {
-                rootManipulator.injectManagedDependency(newDependency, exclusions, artifact.getVersionString());
-            } catch (XMLStreamException e) {
-                throw new RuntimeException("Failed to inject a managed dependency", e);
+                try {
+                    rootManipulator.injectManagedDependency(newDependency, exclusions, artifact.getVersionString());
+                } catch (XMLStreamException e) {
+                    throw new RuntimeException("Failed to inject a managed dependency", e);
+                }
             }
         });
 
+    }
+
+    private static Map<ArtifactRef, Collection<ProjectRef>> getDependencyExclusions(MavenProject module) {
+        Map<ArtifactRef, Collection<ProjectRef>> artifactExclusions = new HashMap<>();
+        List<Dependency> managedDependencies = Collections.emptyList();
+        if (module.getModel().getDependencyManagement() != null) {
+            managedDependencies = module.getModel().getDependencyManagement().getDependencies();
+        }
+        managedDependencies.forEach(dep -> artifactExclusions.put(toArtifactRef(dep), toProjectRefs(dep.getExclusions())));
+        return artifactExclusions;
     }
 
     private boolean isIgnoredModule(String groupId, String artifactId) {
@@ -686,7 +720,11 @@ public class UpgradeComponentsMojo extends AbstractChannelMojo {
         }
     }
 
-    private static int compareVersions(String v1, String v2) {
-        return VERSION_COMPARATOR.compare(v1.trim(), v2.trim());
+    /**
+     * @return should the version be upgraded?
+     */
+    private boolean shouldUpgrade(String originalVersion, String newVersion) {
+        int compare = VERSION_COMPARATOR.compare(newVersion.trim(), originalVersion.trim());
+        return compare > 0 || (!doNotDowngrade && compare < 0);
     }
 }
