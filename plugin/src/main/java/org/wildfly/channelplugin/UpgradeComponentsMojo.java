@@ -282,7 +282,7 @@ public class UpgradeComponentsMojo extends AbstractChannelMojo {
             Dependency dependency = entry.getValue();
             ArtifactRef originalArtifact = entry.getKey();
             String originalVersion = originalArtifact.getVersionString().trim();
-            Optional<String> channelVersionOpt = resolveChannelVersion(originalArtifact);
+            Optional<String> channelVersionOpt = resolveDependencyVersionFromChannel(originalArtifact);
             if (channelVersionOpt.isEmpty()) {
                 // Channel doesn't resolve this, nothing to do
                 continue;
@@ -377,6 +377,13 @@ public class UpgradeComponentsMojo extends AbstractChannelMojo {
         }
     }
 
+    /**
+     * Looks up a reference to a version property (a maven property)
+     *
+     * @param pmeProject current maven module
+     * @param propertyName property name
+     * @return pair containing the maven project where the property is defined and the property name
+     */
     private Pair<Project, String> lookupMavenProperty(Project pmeProject, String propertyName) {
         Pair<Project, String> mavenPropertyRef = followProperties(pmeProject, propertyName);
         if (mavenPropertyRef == null) {
@@ -540,7 +547,7 @@ public class UpgradeComponentsMojo extends AbstractChannelMojo {
         return false;
     }
 
-    private Optional<String> resolveChannelVersion(ArtifactRef artifactRef) {
+    private Optional<String> resolveDependencyVersionFromChannel(ArtifactRef artifactRef) {
         try {
             VersionResult versionResult = channelSession.findLatestMavenArtifactVersion(artifactRef.getGroupId(),
                     artifactRef.getArtifactId(), artifactRef.getType(), artifactRef.getClassifier(),
@@ -561,22 +568,66 @@ public class UpgradeComponentsMojo extends AbstractChannelMojo {
      * collected).
      */
     private void injectTransitiveDependencies() throws DependencyGraphBuilderException {
+        Map<ArtifactRef, Collection<ProjectRef>> transitiveDependencies = findTransitiveDependencies();
+        transitiveDependencies.entrySet().stream()
+                .sorted(Map.Entry.comparingByKey())
+                .forEachOrdered(entry -> {
+            ArtifactRef artifact = entry.getKey();
+            Collection<ProjectRef> exclusions = entry.getValue();
+            String newVersion;
+            try {
+                // Check if the dependency is updated by the channel.
+                VersionResult versionResult = channelSession.findLatestMavenArtifactVersion(artifact.getGroupId(),
+                        artifact.getArtifactId(), artifact.getType(), artifact.getClassifier(), artifact.getVersionString());
+                newVersion = versionResult.getVersion();
+            } catch (NoStreamFoundException e) {
+                // No stream found -> dependency remains the same.
+                return;
+            }
+
+            if (shouldUpgrade(artifact.getVersionString(), newVersion)) {
+                SimpleArtifactRef newDependency = new SimpleArtifactRef(artifact.getGroupId(), artifact.getArtifactId(),
+                        newVersion, artifact.getType(), artifact.getClassifier());
+                getLog().info(String.format("Injecting undeclared dependency: %s (original version was %s)", newDependency,
+                        artifact.getVersionString()));
+
+                try {
+                    rootManipulator.injectManagedDependency(newDependency, exclusions, artifact.getVersionString());
+                } catch (XMLStreamException e) {
+                    throw new RuntimeException("Failed to inject a managed dependency", e);
+                }
+            }
+        });
+    }
+
+    /**
+     * Finds transitive dependencies in all submodules.
+     *
+     * @return map (dependency GAV, exclusions)
+     * @throws DependencyGraphBuilderException when failed to compose a project dependency graph to collect transitive
+     *  deps
+     */
+    private Map<ArtifactRef, Collection<ProjectRef>> findTransitiveDependencies()
+            throws DependencyGraphBuilderException {
         final List<ProjectRef> projectGAs = projectGavs.stream().map(ProjectRef::asProjectRef)
                 .collect(Collectors.toList());
 
-        // This performs a traversal of a dependency tree of all submodules in the project. All discovered dependencies
-        // that are not directly declared in the project are considered transitive dependencies.
-        Map<ArtifactRef, Collection<ProjectRef>> dependenciesToInject = new HashMap<>();
+        // Map of <artifact, list of exclusions>
+        Map<ArtifactRef, Collection<ProjectRef>> transitiveDependencies = new HashMap<>();
+        Map<ProjectRef, ArtifactRef> uniqueGaMap = new HashMap<>();
         ArrayList<MavenProject> projects = new ArrayList<>();
         projects.add(mavenProject);
         List<MavenProject> collectedProjects = mavenProject.getCollectedProjects().stream()
                 .filter(p -> !isIgnoredModule(p.getGroupId(), p.getArtifactId()))
                 .collect(Collectors.toList());
         projects.addAll(collectedProjects);
+
+        // This performs a traversal of a dependency tree of all submodules in the project. All discovered dependencies
+        // that are not directly declared in the project are considered transitive dependencies.
         for (MavenProject module: projects) {
 
             // Collect exclusions from the effective POM
-            Map<ArtifactRef, Collection<ProjectRef>> artifactExclusions = getDependencyExclusions(module);
+            Map<ArtifactRef, List<ProjectRef>> artifactExclusions = getDependencyExclusions(module);
 
             ProjectBuildingRequest buildingRequest =
                     new DefaultProjectBuildingRequest(mavenSession.getProjectBuildingRequest());
@@ -607,46 +658,27 @@ public class UpgradeComponentsMojo extends AbstractChannelMojo {
                     return;
                 }
 
-                Collection<ProjectRef> exclusions = artifactExclusions.getOrDefault(artifact, Collections.emptyList());
-                Collection<ProjectRef> existingExclusions = dependenciesToInject.computeIfAbsent(artifact, a -> new HashSet<>());
-                existingExclusions.addAll(exclusions);
+                List<ProjectRef> exclusions = artifactExclusions.getOrDefault(artifact, Collections.emptyList());
+                // Make sure the exclusions are unique
+                HashSet<ProjectRef> exclusionsSet = new HashSet<>(exclusions);
+
+                // Only keep unique dependency G:As, if there is multiple G:A:Vs with different versions, use the one
+                // with a higher version
+                ArtifactRef existingArtifact = uniqueGaMap.get(artifact.asProjectRef());
+                if (existingArtifact == null
+                        || VERSION_COMPARATOR.compare(artifact.getVersionString(), existingArtifact.getVersionString()) > 0) {
+                    // No previous artifact was recorded, or the current artifact version is higher than the one
+                    // recorded previously -> replace
+                    uniqueGaMap.put(artifact.asProjectRef(), artifact);
+                    transitiveDependencies.put(artifact, exclusionsSet);
+                }
             });
         }
-
-        dependenciesToInject.entrySet().stream()
-                .sorted(Map.Entry.comparingByKey())
-                .forEachOrdered(entry -> {
-            ArtifactRef artifact = entry.getKey();
-            Collection<ProjectRef> exclusions = entry.getValue();
-            String newVersion;
-            try {
-                // Check if the dependency is updated by the channel.
-                VersionResult versionResult = channelSession.findLatestMavenArtifactVersion(artifact.getGroupId(),
-                        artifact.getArtifactId(), artifact.getType(), artifact.getClassifier(), artifact.getVersionString());
-                newVersion = versionResult.getVersion();
-            } catch (NoStreamFoundException e) {
-                // No stream found -> dependency remains the same.
-                return;
-            }
-
-            if (shouldUpgrade(artifact.getVersionString(), newVersion)) {
-                SimpleArtifactRef newDependency = new SimpleArtifactRef(artifact.getGroupId(), artifact.getArtifactId(),
-                        newVersion, artifact.getType(), artifact.getClassifier());
-                getLog().info(String.format("Injecting undeclared dependency: %s (original version was %s)", newDependency,
-                        artifact.getVersionString()));
-
-                try {
-                    rootManipulator.injectManagedDependency(newDependency, exclusions, artifact.getVersionString());
-                } catch (XMLStreamException e) {
-                    throw new RuntimeException("Failed to inject a managed dependency", e);
-                }
-            }
-        });
-
+        return transitiveDependencies;
     }
 
-    private static Map<ArtifactRef, Collection<ProjectRef>> getDependencyExclusions(MavenProject module) {
-        Map<ArtifactRef, Collection<ProjectRef>> artifactExclusions = new HashMap<>();
+    private static Map<ArtifactRef, List<ProjectRef>> getDependencyExclusions(MavenProject module) {
+        Map<ArtifactRef, List<ProjectRef>> artifactExclusions = new HashMap<>();
         List<Dependency> managedDependencies = Collections.emptyList();
         if (module.getModel().getDependencyManagement() != null) {
             managedDependencies = module.getModel().getDependencyManagement().getDependencies();
