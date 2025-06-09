@@ -128,9 +128,6 @@ public class UpgradeComponentsMojo extends AbstractChannelMojo {
     @Parameter(property = "injectTransitiveDependencies", defaultValue = "true")
     boolean injectTransitiveDependencies;
 
-    @Parameter(property = "ignoreTestDependencies", defaultValue = "true")
-    boolean ignoreTestDependencies;
-
     @Parameter(property = "ignoreScopes", defaultValue = "test")
     Set<String> ignoreScopes = new HashSet<>();
 
@@ -170,6 +167,7 @@ public class UpgradeComponentsMojo extends AbstractChannelMojo {
     private final Set<ProjectRef> declaredDependencies = new HashSet<>();
     private final Set<String> overriddenProperties = new HashSet<>(); // Names of properties that were explicitly overridden via `overrideProperties` parameter.
     private final Set<Dependency> overriddenDependencies = new HashSet<>(); // Collected dependency instances that were explicitly overridden via `overrideDependencies` parameter.
+    private boolean allModulesProcessed = false;
 
     /**
      * This includes pre-processing of input parameters.
@@ -179,9 +177,6 @@ public class UpgradeComponentsMojo extends AbstractChannelMojo {
 
         ignoreStreams.forEach(ga -> ignoredStreams.add(SimpleProjectRef.parse(ga)));
         dontIgnoreStreams.forEach(ga -> unignoredStreams.add(SimpleProjectRef.parse(ga)));
-        if (ignoreTestDependencies) {
-            ignoreScopes.add("test");
-        }
     }
 
     /**
@@ -231,6 +226,7 @@ public class UpgradeComponentsMojo extends AbstractChannelMojo {
 
                 processModule(project, manipulator);
             }
+            allModulesProcessed = true;
 
             Project rootProject = PMEUtils.findRootProject(pmeProjects);
             rootManipulator = manipulators.get(Pair.of(rootProject.getGroupId(), rootProject.getArtifactId()));
@@ -253,8 +249,6 @@ public class UpgradeComponentsMojo extends AbstractChannelMojo {
 
         } catch (ManipulationException | XMLStreamException e) {
             throw new MojoExecutionException("Project parsing failed", e);
-        } catch (DependencyGraphBuilderException e) {
-            throw new MojoExecutionException("Dependency collector error", e);
         }
     }
 
@@ -310,8 +304,6 @@ public class UpgradeComponentsMojo extends AbstractChannelMojo {
 
     private void processDependencyWithVersionProperty(Project pmeProject, PomManipulator manipulator, Dependency dependency,
                                                       String originalVersion, String newVersion) throws XMLStreamException {
-        @SuppressWarnings("UnnecessaryLocalVariable")
-        Dependency d = dependency;
         String originalVersionString = dependency.getVersion();
         String versionPropertyName = VersionUtils.extractPropertyName(originalVersionString);
 
@@ -325,7 +317,7 @@ public class UpgradeComponentsMojo extends AbstractChannelMojo {
         if (mavenPropertyRef == null) {
             ChannelPluginLogger.LOGGER.errorf(
                     "Unable to upgrade %s:%s:%s to '%s', can't locate property '%s' in the project",
-                    d.getGroupId(), d.getArtifactId(), d.getVersion(), newVersion,
+                    dependency.getGroupId(), dependency.getArtifactId(), dependency.getVersion(), newVersion,
                     versionPropertyName);
             return;
         }
@@ -346,7 +338,7 @@ public class UpgradeComponentsMojo extends AbstractChannelMojo {
         } else {
             if (!newVersion.equals(lockedProperties.get(mavenPropertyRef))) {
                 // overwrite dependency version inline
-                manipulator.overrideDependencyVersion(d.getGroupId(), d.getArtifactId(),
+                manipulator.overrideDependencyVersion(dependency.getGroupId(), dependency.getArtifactId(),
                         originalVersionString, newVersion);
             }
         }
@@ -450,21 +442,10 @@ public class UpgradeComponentsMojo extends AbstractChannelMojo {
         return Optional.empty();
     }
 
-    @SuppressWarnings("RedundantIfStatement")
     private boolean isIgnoredProperty(String propertyName) {
-        if (ignoreProperties.contains(propertyName)) {
-            return true;
-        }
-        for (String prefix: ignorePropertiesPrefixedWith) {
-            if (propertyName.startsWith(prefix)) {
-                return true;
-            }
-        }
-        if (overriddenProperties.contains(propertyName)) {
-            // this property has been overridden based on `overrideProperties` parameter, do not process again
-            return true;
-        }
-        return false;
+        return ignoreProperties.contains(propertyName)
+                || ignorePropertiesPrefixedWith.stream().anyMatch(propertyName::startsWith)
+                || overriddenProperties.contains(propertyName);
     }
 
     private Map<ArtifactRef, Dependency> collectResolvedProjectDependencies(Project pmeProject)
@@ -554,25 +535,31 @@ public class UpgradeComponentsMojo extends AbstractChannelMojo {
                     artifactRef.getVersionString());
             return Optional.of(versionResult.getVersion());
         } catch (UnresolvedMavenArtifactException e) {
-            // this produces a lot of noise due to many of e.g. test artifacts not being managed by channels, so keep it
-            // at the debug level
-            getLog().debug("Can't resolve artifact: " + artifactRef, e);
+            // This is expected to happen - the artifacts not covered by the channel result in
+            // UnresolvedMavenArtifactException and this doesn't signify a processing error.
+            getLog().debug(String.format("Artifact %s:%s is not resolvable by given channels.",
+                    artifactRef.getGroupId(), artifactRef.getArtifactId()));
             return Optional.empty();
         }
     }
 
     /**
      * Overrides versions of transitive dependencies in all project's modules.
-     * <p>
-     * This has to be called after all submodules has been processed (so that all declared dependencies has been
-     * collected).
      */
-    private void injectTransitiveDependencies() throws DependencyGraphBuilderException {
+    private void injectTransitiveDependencies() throws MojoExecutionException {
+        if (!allModulesProcessed) {
+            // This has to be called after all submodules has been processed, so that all declared dependencies has been
+            // collected.
+            throw new IllegalStateException("The injectTransitiveDependencies() method has to be called after all" +
+                    " project modules has been processed.");
+        }
+
         Map<ArtifactRef, Collection<ProjectRef>> transitiveDependencies = findTransitiveDependencies();
-        transitiveDependencies.entrySet().stream()
+        List<Map.Entry<ArtifactRef, Collection<ProjectRef>>> orderedEntries = transitiveDependencies.entrySet().stream()
                 .sorted(Map.Entry.comparingByKey())
-                .forEachOrdered(entry -> {
-            ArtifactRef artifact = entry.getKey();
+                .collect(Collectors.toList());
+        for (Map.Entry<ArtifactRef, Collection<ProjectRef>> entry: orderedEntries) {
+        ArtifactRef artifact = entry.getKey();
             Collection<ProjectRef> exclusions = entry.getValue();
             String newVersion;
             try {
@@ -594,21 +581,21 @@ public class UpgradeComponentsMojo extends AbstractChannelMojo {
                 try {
                     rootManipulator.injectManagedDependency(newDependency, exclusions, artifact.getVersionString());
                 } catch (XMLStreamException e) {
-                    throw new RuntimeException("Failed to inject a managed dependency", e);
+                    throw new MojoExecutionException("Failed to inject a managed dependency", e);
                 }
             }
-        });
+        }
     }
 
     /**
      * Finds transitive dependencies in all submodules.
      *
      * @return map (dependency GAV, exclusions)
-     * @throws DependencyGraphBuilderException when failed to compose a project dependency graph to collect transitive
+     * @throws MojoExecutionException when failed to compose a project dependency graph to collect transitive
      *  deps
      */
     private Map<ArtifactRef, Collection<ProjectRef>> findTransitiveDependencies()
-            throws DependencyGraphBuilderException {
+            throws MojoExecutionException {
         final List<ProjectRef> projectGAs = projectGavs.stream().map(ProjectRef::asProjectRef)
                 .collect(Collectors.toList());
 
@@ -632,7 +619,12 @@ public class UpgradeComponentsMojo extends AbstractChannelMojo {
             ProjectBuildingRequest buildingRequest =
                     new DefaultProjectBuildingRequest(mavenSession.getProjectBuildingRequest());
             buildingRequest.setProject(module);
-            DependencyNode rootNode = dependencyGraphBuilder.buildDependencyGraph(buildingRequest, null);
+            DependencyNode rootNode;
+            try {
+                rootNode = dependencyGraphBuilder.buildDependencyGraph(buildingRequest, null);
+            } catch (DependencyGraphBuilderException e) {
+                throw new MojoExecutionException("Failed to compose dependency graph.");
+            }
             CollectingDependencyNodeVisitor visitor = new CollectingDependencyNodeVisitor();
             rootNode.accept(visitor);
             visitor.getNodes().forEach(node -> {
