@@ -20,23 +20,23 @@ public class UpgradeComponentsMojoTestCase {
 
         assertThat(UpgradeComponentsMojo.followProperties(project, "version.a")).satisfies(pair -> {
             assertThat(pair).isNotNull();
-            assertThat(pair.getLeft()).isSameAs(project);
-            assertThat(pair.getRight()).isEqualTo("version.a");
+            assertThat(pair.getModule()).isSameAs(project);
+            assertThat(pair.getPropertyName()).isEqualTo("version.a");
         });
         assertThat(UpgradeComponentsMojo.followProperties(project, "version.b")).satisfies(pair -> {
             assertThat(pair).isNotNull();
-            assertThat(pair.getLeft()).isSameAs(project);
-            assertThat(pair.getRight()).isEqualTo("version.d");
+            assertThat(pair.getModule()).isSameAs(project);
+            assertThat(pair.getPropertyName()).isEqualTo("version.d");
         });
         assertThat(UpgradeComponentsMojo.followProperties(project, "version.c")).satisfies(pair -> {
             assertThat(pair).isNotNull();
-            assertThat(pair.getLeft()).isSameAs(project);
-            assertThat(pair.getRight()).isEqualTo("version.d");
+            assertThat(pair.getModule()).isSameAs(project);
+            assertThat(pair.getPropertyName()).isEqualTo("version.d");
         });
         assertThat(UpgradeComponentsMojo.followProperties(project, "version.d")).satisfies(pair -> {
             assertThat(pair).isNotNull();
-            assertThat(pair.getLeft()).isSameAs(project);
-            assertThat(pair.getRight()).isEqualTo("version.d");
+            assertThat(pair.getModule()).isSameAs(project);
+            assertThat(pair.getPropertyName()).isEqualTo("version.d");
         });
     }
 
@@ -52,23 +52,23 @@ public class UpgradeComponentsMojoTestCase {
 
         assertThat(UpgradeComponentsMojo.resolveExternalProperty(project, "version.a")).satisfies(pair -> {
             assertThat(pair).isNotNull();
-            assertThat(pair.getLeft()).isEqualTo("version.a");
-            assertThat(pair.getRight()).isEqualTo("1.0");
+            assertThat(pair.getName()).isEqualTo("version.a");
+            assertThat(pair.getValue()).isEqualTo("1.0");
         });
         assertThat(UpgradeComponentsMojo.resolveExternalProperty(project, "version.b")).satisfies(pair -> {
             assertThat(pair).isNotNull();
-            assertThat(pair.getLeft()).isEqualTo("version.d");
-            assertThat(pair.getRight()).isEqualTo("2.0");
+            assertThat(pair.getName()).isEqualTo("version.d");
+            assertThat(pair.getValue()).isEqualTo("2.0");
         });
         assertThat(UpgradeComponentsMojo.resolveExternalProperty(project, "version.c")).satisfies(pair -> {
             assertThat(pair).isNotNull();
-            assertThat(pair.getLeft()).isEqualTo("version.d");
-            assertThat(pair.getRight()).isEqualTo("2.0");
+            assertThat(pair.getName()).isEqualTo("version.d");
+            assertThat(pair.getValue()).isEqualTo("2.0");
         });
         assertThat(UpgradeComponentsMojo.resolveExternalProperty(project, "version.d")).satisfies(pair -> {
             assertThat(pair).isNotNull();
-            assertThat(pair.getLeft()).isEqualTo("version.d");
-            assertThat(pair.getRight()).isEqualTo("2.0");
+            assertThat(pair.getName()).isEqualTo("version.d");
+            assertThat(pair.getValue()).isEqualTo("2.0");
         });
     }
 

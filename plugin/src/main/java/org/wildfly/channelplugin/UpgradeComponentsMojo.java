@@ -1,6 +1,5 @@
 package org.wildfly.channelplugin;
 
-import org.apache.commons.lang3.tuple.Pair;
 import org.apache.maven.model.Dependency;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugins.annotations.Mojo;
@@ -161,9 +160,9 @@ public class UpgradeComponentsMojo extends AbstractChannelMojo {
     private final Set<ProjectRef> ignoredStreams = new HashSet<>();
     private final Set<ProjectRef> unignoredStreams = new HashSet<>();
     private Set<ProjectVersionRef> projectGavs;
-    private final Map<Pair<String, String>, PomManipulator> manipulators = new HashMap<>();
+    private final Map<ProjectRef, PomManipulator> manipulators = new HashMap<>();
     private PomManipulator rootManipulator;
-    private final Map<Pair<Project, String>, String> lockedProperties = new HashMap<>();
+    private final Map<PropertyRef, String> lockedProperties = new HashMap<>();
     private final Set<ProjectRef> declaredDependencies = new HashSet<>();
     private final Set<String> overriddenProperties = new HashSet<>(); // Names of properties that were explicitly overridden via `overrideProperties` parameter.
     private final Set<Dependency> overriddenDependencies = new HashSet<>(); // Collected dependency instances that were explicitly overridden via `overrideDependencies` parameter.
@@ -222,14 +221,14 @@ public class UpgradeComponentsMojo extends AbstractChannelMojo {
 
                 // create manipulator for given module
                 PomManipulator manipulator = new PomManipulator(project);
-                manipulators.put(Pair.of(project.getGroupId(), project.getArtifactId()), manipulator);
+                manipulators.put(new SimpleProjectRef(project.getGroupId(), project.getArtifactId()), manipulator);
 
                 processModule(project, manipulator);
             }
             allModulesProcessed = true;
 
             Project rootProject = PMEUtils.findRootProject(pmeProjects);
-            rootManipulator = manipulators.get(Pair.of(rootProject.getGroupId(), rootProject.getArtifactId()));
+            rootManipulator = manipulators.get(new SimpleProjectRef(rootProject.getGroupId(), rootProject.getArtifactId()));
 
             if (injectTransitiveDependencies) {
                 injectTransitiveDependencies();
@@ -312,7 +311,7 @@ public class UpgradeComponentsMojo extends AbstractChannelMojo {
             return;
         }*/
 
-        Pair<Project, String> mavenPropertyRef = lookupMavenProperty(pmeProject, versionPropertyName);
+        PropertyRef mavenPropertyRef = lookupMavenProperty(pmeProject, versionPropertyName);
 
         if (mavenPropertyRef == null) {
             ChannelPluginLogger.LOGGER.errorf(
@@ -322,7 +321,7 @@ public class UpgradeComponentsMojo extends AbstractChannelMojo {
             return;
         }
 
-        String targetPropertyName = mavenPropertyRef.getRight();
+        String targetPropertyName = mavenPropertyRef.getPropertyName();
 
         if (isIgnoredProperty(targetPropertyName)) {
             getLog().info(String.format("Ignoring property '%s'", targetPropertyName));
@@ -344,22 +343,22 @@ public class UpgradeComponentsMojo extends AbstractChannelMojo {
         }
     }
 
-    private void updateVersionProperty(Project pmeProject, Dependency dependency, Pair<Project, String> mavenPropertyRef, String newVersion)
+    private void updateVersionProperty(Project pmeProject, Dependency dependency, PropertyRef mavenPropertyRef, String newVersion)
             throws XMLStreamException {
-        Project targetProject = mavenPropertyRef.getLeft();
-        String targetPropertyName = mavenPropertyRef.getRight();
+        Project targetProject = mavenPropertyRef.getModule();
+        String targetPropertyName = mavenPropertyRef.getPropertyName();
 
         if (targetProject != null) {
             // property has been located in some project module
             // => override the located property in the module where it has been located
             PomManipulator targetManipulator = manipulators.get(
-                    Pair.of(targetProject.getGroupId(), targetProject.getArtifactId()));
+                    new SimpleProjectRef(targetProject.getGroupId(), targetProject.getArtifactId()));
             targetManipulator.overrideProperty(targetPropertyName, newVersion);
         } else if (injectExternalProperties) {
             // property has been located in external parent pom
             // => inject the property into current module
             PomManipulator targetManipulator = manipulators.get(
-                    Pair.of(pmeProject.getGroupId(), pmeProject.getArtifactId()));
+                    new SimpleProjectRef(pmeProject.getGroupId(), pmeProject.getArtifactId()));
             targetManipulator.injectProperty(targetPropertyName, newVersion);
         } else {
             getLog().warn(String.format("Can't upgrade %s:%s:%s to %s, property %s is not defined in the " +
@@ -374,14 +373,14 @@ public class UpgradeComponentsMojo extends AbstractChannelMojo {
      *
      * @param pmeProject current maven module
      * @param propertyName property name
-     * @return pair containing the maven project where the property is defined and the property name
+     * @return property reference
      */
-    private Pair<Project, String> lookupMavenProperty(Project pmeProject, String propertyName) {
-        Pair<Project, String> mavenPropertyRef = followProperties(pmeProject, propertyName);
+    private PropertyRef lookupMavenProperty(Project pmeProject, String propertyName) {
+        PropertyRef mavenPropertyRef = followProperties(pmeProject, propertyName);
         if (mavenPropertyRef == null) {
-            Pair<String, String> externalProperty = resolveExternalProperty(mavenProject, propertyName);
+            ExternalProperty externalProperty = resolveExternalProperty(mavenProject, propertyName);
             if (externalProperty != null) {
-                mavenPropertyRef = Pair.of(null, externalProperty.getLeft());
+                mavenPropertyRef = new PropertyRef(null, externalProperty.getName());
             }
         }
         return mavenPropertyRef;
@@ -466,11 +465,11 @@ public class UpgradeComponentsMojo extends AbstractChannelMojo {
         Map<ArtifactRef, Dependency> correctedDependencies = new HashMap<>();
         projectDependencies.forEach((artifact, dependency) -> {
             if (VersionUtils.isProperty(artifact.getVersionString())) {
-                Pair<String, String> externalProperty = resolveExternalProperty(mavenProject,
+                ExternalProperty externalProperty = resolveExternalProperty(mavenProject,
                         VersionUtils.extractPropertyName(artifact.getVersionString()));
                 if (externalProperty != null) {
                     SimpleArtifactRef newArtifact = new SimpleArtifactRef(artifact.getGroupId(), artifact.getArtifactId(),
-                            externalProperty.getRight(), artifact.getType(), artifact.getClassifier());
+                            externalProperty.getValue(), artifact.getType(), artifact.getClassifier());
                     correctedDependencies.put(newArtifact, dependency);
                 } else {
                     getLog().error("Following dependency uses a version property that could not be resolved: " + dependency.toString());
@@ -691,7 +690,7 @@ public class UpgradeComponentsMojo extends AbstractChannelMojo {
      * This method doesn't support cases when a property value is a composition of multiple properties, or a composition
      * of properties and strings.
      */
-    static Pair<Project, String> followProperties(Project pmeProject, String propertyName) {
+    static PropertyRef followProperties(Project pmeProject, String propertyName) {
         Properties properties = pmeProject.getModel().getProperties();
         if (!properties.containsKey(propertyName)) {
             // property not present in current module, look into parent module
@@ -707,12 +706,12 @@ public class UpgradeComponentsMojo extends AbstractChannelMojo {
             if (VersionUtils.isProperty(propertyValue)) {
                 // the property value is also a property reference -> follow the chain
                 String newPropertyName = VersionUtils.extractPropertyName(propertyValue);
-                Pair<Project, String> targetProperty = followProperties(pmeProject, newPropertyName);
+                PropertyRef targetProperty = followProperties(pmeProject, newPropertyName);
                 if (targetProperty != null) {
                     return targetProperty;
                 }
             }
-            return Pair.of(pmeProject, propertyName);
+            return new PropertyRef(pmeProject, propertyName);
         }
     }
 
@@ -720,9 +719,9 @@ public class UpgradeComponentsMojo extends AbstractChannelMojo {
      * Resolves a property from external parent pom. If given property references another property, this method
      * tries to traverse the property chain.
      *
-     * @return pair [property, value], where the property is the last property name in the traversal chain
+     * @return external property reference
      */
-    static Pair<String, String> resolveExternalProperty(MavenProject mavenProject, String propertyName) {
+    static ExternalProperty resolveExternalProperty(MavenProject mavenProject, String propertyName) {
         if (mavenProject == null) {
             return null;
         }
@@ -735,12 +734,12 @@ public class UpgradeComponentsMojo extends AbstractChannelMojo {
             if (VersionUtils.isProperty(propertyValue)) {
                 // the property value is also a property reference -> follow the chain
                 String newPropertyName = VersionUtils.extractPropertyName(propertyValue);
-                Pair<String, String> targetProperty = resolveExternalProperty(mavenProject, newPropertyName);
+                ExternalProperty targetProperty = resolveExternalProperty(mavenProject, newPropertyName);
                 if (targetProperty != null) {
                     return targetProperty;
                 }
             }
-            return Pair.of(propertyName, propertyValue);
+            return new ExternalProperty(propertyName, propertyValue);
         }
     }
 
