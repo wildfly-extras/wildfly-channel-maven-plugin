@@ -1,21 +1,35 @@
 package org.wildfly.channelplugin;
 
 import org.apache.commons.lang3.NotImplementedException;
-import org.apache.maven.plugin.AbstractMojo;
-import org.jboss.jandex.*;
+import org.apache.maven.execution.MavenSession;
+import org.apache.maven.plugin.Mojo;
+import org.apache.maven.plugin.MojoExecutionException;
+import org.jboss.jandex.AnnotationInstance;
+import org.jboss.jandex.ClassInfo;
+import org.jboss.jandex.DotName;
+import org.jboss.jandex.FieldInfo;
+import org.jboss.jandex.Index;
+import org.jboss.jandex.IndexReader;
 
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.lang.reflect.Field;
 import java.nio.file.Files;
-import java.util.*;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 /**
  * This provides functionality to read default, project specific, Mojo configuration from a file and apply it on a Mojo.
  * <p>
  * The configuration file would be versioned in a project repository, in a file called
  * <code>.wildfly-channel-maven-plugin</code>.
+ * <p>
+ * If used, this configuration should be applied on the mojo before any logic that would read the Mojo parameters is
+ * executed.
  */
 class MojoConfigurator {
 
@@ -27,9 +41,18 @@ class MojoConfigurator {
     private final Index index;
     private final Map<String, String> preconfiguredParameters;
 
+    public static void applyExternalConfiguration(Mojo mojo, MavenSession mavenSession) throws MojoExecutionException {
+        try {
+            MojoConfigurator configurator = new MojoConfigurator(mavenSession);
+            configurator.configureProperties(mojo);
+        } catch (IOException e) {
+            throw new MojoExecutionException("Unable to read plugin configuration from " + MojoConfigurator.DEFAULT_CONFIGURATION_FILE, e);
+        }
+    }
 
-    public MojoConfigurator() throws IOException {
-        this(new File(DEFAULT_CONFIGURATION_FILE));
+
+    public MojoConfigurator(MavenSession mavenSession) throws IOException {
+        this(new File(mavenSession.getExecutionRootDirectory(), DEFAULT_CONFIGURATION_FILE));
     }
 
     public MojoConfigurator(File configFile) throws IOException {
@@ -53,7 +76,7 @@ class MojoConfigurator {
      * Reads default system properties configuration from a file and applies it to a Mojo instance.
      * @param mojo a Mojo instance to set the parameters to
      */
-    public void configureProperties(AbstractMojo mojo) {
+    public void configureProperties(Mojo mojo) {
         if (preconfiguredParameters.isEmpty()) {
             return; // Nothing to do
         }

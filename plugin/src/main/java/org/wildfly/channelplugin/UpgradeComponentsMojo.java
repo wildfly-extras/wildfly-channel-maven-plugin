@@ -31,8 +31,6 @@ import org.wildfly.channeltools.util.VersionUtils;
 
 import javax.inject.Inject;
 import javax.xml.stream.XMLStreamException;
-import java.io.File;
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -172,24 +170,11 @@ public class UpgradeComponentsMojo extends AbstractChannelMojo {
      * This includes pre-processing of input parameters.
      */
     private void init() throws MojoExecutionException {
+        MojoConfigurator.applyExternalConfiguration(this, mavenSession); // Keep this as the first step.
         initChannelSession();
 
         ignoreStreams.forEach(ga -> ignoredStreams.add(SimpleProjectRef.parse(ga)));
         dontIgnoreStreams.forEach(ga -> unignoredStreams.add(SimpleProjectRef.parse(ga)));
-    }
-
-    /**
-     * This updates the configuration according to a config file living in the project root. Should be called before the
-     * {@link #init()} method.
-     */
-    private void reconfigure() throws MojoExecutionException {
-        File configFile = new File(mavenSession.getExecutionRootDirectory(), MojoConfigurator.DEFAULT_CONFIGURATION_FILE);
-        try {
-            MojoConfigurator configurator = new MojoConfigurator(configFile);
-            configurator.configureProperties(this);
-        } catch (IOException e) {
-            throw new MojoExecutionException("Unable to read plugin configuration from " + MojoConfigurator.DEFAULT_CONFIGURATION_FILE, e);
-        }
     }
 
     @Override
@@ -199,7 +184,6 @@ public class UpgradeComponentsMojo extends AbstractChannelMojo {
             return;
         }
 
-        reconfigure();
         init();
 
         try {
