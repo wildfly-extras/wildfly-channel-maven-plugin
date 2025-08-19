@@ -5,7 +5,7 @@
     <parent>
         <groupId>org.jboss</groupId>
         <artifactId>jboss-parent</artifactId>
-        <version>39</version>
+        <version>50</version>
     </parent>
 
     <groupId>org.wildfly</groupId>
@@ -13,14 +13,23 @@
     <version>1.0.28-SNAPSHOT</version>
     <packaging>pom</packaging>
 
-    <name>Wildfly Channel Tools - Root Project</name>
+    <name>Wildfly Channel Maven Plugin - Root Module</name>
+    <description>This is a root module for the wildfly-channel-maven-plugin project.</description>
+    <url>https://github.com/wildfly-extras/wildfly-channel-maven-plugin</url>
+
+    <licenses>
+        <license>
+            <name>The Apache License, Version 2.0</name>
+            <url>http://www.apache.org/licenses/LICENSE-2.0.txt</url>
+        </license>
+    </licenses>
 
     <scm>
         <connection>scm:git:git@github.com:wildfly-extras/wildfly-channel-maven-plugin.git</connection>
         <developerConnection>scm:git:git@github.com:wildfly-extras/wildfly-channel-maven-plugin.git</developerConnection>
         <url>https://github.com/wildfly-extras/wildfly-channel-maven-plugin</url>
-        <tag>HEAD</tag>
     </scm>
+
     <distributionManagement>
         <repository>
             <id>jboss-releases-repository</id>
@@ -28,6 +37,15 @@
             <url>https://repository.jboss.org/nexus/service/local/staging/deploy/maven2/</url>
         </repository>
     </distributionManagement>
+
+    <developers>
+        <developer>
+            <name>Tomas Hofman</name>
+            <email>thofman@redhat.com</email>
+            <organization>Red Hat</organization>
+            <organizationUrl>http://www.redhat.com</organizationUrl>
+        </developer>
+    </developers>
 
     <modules>
         <module>plugin</module>
@@ -39,6 +57,9 @@
         <maven.compiler.source>11</maven.compiler.source>
         <maven.compiler.target>11</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+
+        <nexus.repository.staging>wildfly-staging</nexus.repository.staging>
+        <nexus.staging.tag>wildfly-channel-maven-plugin-${project.version}</nexus.staging.tag>
 
         <maven.version>3.6.3</maven.version> <!-- Note that PME depends on 3.5.0 -->
         <maven-resolver.version>1.6.2</maven-resolver.version>
