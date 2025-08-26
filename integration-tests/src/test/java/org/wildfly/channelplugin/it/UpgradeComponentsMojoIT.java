@@ -83,12 +83,19 @@ public class UpgradeComponentsMojoIT {
                     assertThat(o.get().getVersion()).isEqualTo("1.0.0.Final");
                 });
 
+        // verify that a transitive dependency has been overwritten
+        assertThat(dependencyModel.getDependency("com.fasterxml.jackson.core", "jackson-databind", "jar", null))
+                .satisfies(o -> {
+                    assertThat(o).isPresent();
+                    assertThat(o.get().getVersion()).isEqualTo("2.17.2");
+                });
+
         assertThat(model.getRepositories()).isNotEmpty();
         assertThat(model.getRepositories().get(0).getUrl()).startsWith("file://"); // TODO: check complete URL
     }
 
     /**
-     * This test tales a jboss-eap-jakartaee8:7.4.0.GA BOM and aligns it to a channel with more recent component
+     * This test takes a jboss-eap-jakartaee8:7.4.0.GA BOM and aligns it to a channel with more recent component
      * versions. It is verified that all BOM dependencies that are listed in the channel, are upgraded accordingly.
      */
     @MavenGoal("${project.groupId}:wildfly-channel-maven-plugin:${project.version}:upgrade")

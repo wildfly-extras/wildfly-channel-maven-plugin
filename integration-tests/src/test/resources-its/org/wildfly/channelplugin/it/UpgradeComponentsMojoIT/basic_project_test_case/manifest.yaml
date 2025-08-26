@@ -16,3 +16,6 @@ streams:
   - groupId: commons-io
     artifactId: commons-io
     version: 2.10.1.redhat-00001
+  - groupId: com.fasterxml.jackson.core
+    artifactId: jackson-databind
+    version: 2.17.2
