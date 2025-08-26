@@ -542,7 +542,7 @@ public class UpgradeComponentsMojo extends AbstractChannelMojo {
                 .sorted(Map.Entry.comparingByKey())
                 .collect(Collectors.toList());
         for (Map.Entry<ArtifactRef, Collection<ProjectRef>> entry: orderedEntries) {
-        ArtifactRef artifact = entry.getKey();
+            ArtifactRef artifact = entry.getKey();
             Collection<ProjectRef> exclusions = entry.getValue();
             String newVersion;
             try {
@@ -552,7 +552,7 @@ public class UpgradeComponentsMojo extends AbstractChannelMojo {
                 newVersion = versionResult.getVersion();
             } catch (NoStreamFoundException e) {
                 // No stream found -> dependency remains the same.
-                return;
+                continue;
             }
 
             if (shouldUpgrade(artifact.getVersionString(), newVersion)) {
