@@ -456,7 +456,7 @@ public class UpgradeComponentsMojo extends AbstractChannelMojo {
                             externalProperty.getValue(), artifact.getType(), artifact.getClassifier());
                     correctedDependencies.put(newArtifact, dependency);
                 } else {
-                    getLog().error("Following dependency uses a version property that could not be resolved: " + dependency.toString());
+                    getLog().warn("Following dependency uses a version property that could not be resolved: " + dependency.toString());
                 }
             } else {
                 correctedDependencies.put(artifact, dependency);
@@ -584,7 +584,6 @@ public class UpgradeComponentsMojo extends AbstractChannelMojo {
 
         // Map of <artifact, list of exclusions>
         Map<ArtifactRef, Collection<ProjectRef>> transitiveDependencies = new HashMap<>();
-        Map<ProjectRef, ArtifactRef> uniqueGaMap = new HashMap<>();
         ArrayList<MavenProject> projects = new ArrayList<>();
         projects.add(mavenProject);
         List<MavenProject> collectedProjects = mavenProject.getCollectedProjects().stream()
@@ -634,22 +633,56 @@ public class UpgradeComponentsMojo extends AbstractChannelMojo {
                 }
 
                 List<ProjectRef> exclusions = artifactExclusions.getOrDefault(artifact, Collections.emptyList());
-                // Make sure the exclusions are unique
                 HashSet<ProjectRef> exclusionsSet = new HashSet<>(exclusions);
 
-                // Only keep unique dependency G:As, if there is multiple G:A:Vs with different versions, use the one
-                // with a higher version
-                ArtifactRef existingArtifact = uniqueGaMap.get(artifact.asProjectRef());
-                if (existingArtifact == null
-                        || VERSION_COMPARATOR.compare(artifact.getVersionString(), existingArtifact.getVersionString()) > 0) {
-                    // No previous artifact was recorded, or the current artifact version is higher than the one
-                    // recorded previously -> replace
-                    uniqueGaMap.put(artifact.asProjectRef(), artifact);
-                    transitiveDependencies.put(artifact, exclusionsSet);
-                }
+                addOrUpdateArtifact(transitiveDependencies, artifact, exclusionsSet);
             });
         }
         return transitiveDependencies;
+    }
+
+    /**
+     * Adds or updates an artifact in the unique GA map and transitive dependencies map.
+     * If an artifact with the same G:A:C exists but with a lower version, it will be replaced.
+     *
+     * @param transitiveDependencies map of artifacts to their exclusions
+     * @param artifact the artifact to add or update
+     * @param exclusions the exclusions for this artifact
+     */
+    static void addOrUpdateArtifact(Map<ArtifactRef, Collection<ProjectRef>> transitiveDependencies,
+                                    ArtifactRef artifact,
+                                    Collection<ProjectRef> exclusions) {
+        Optional<ArtifactRef> match = transitiveDependencies.keySet().stream()
+                .filter(ref -> gaAndClassifierMatches(ref, artifact))
+                .findAny();
+
+        if (match.isEmpty()
+                || VERSION_COMPARATOR.compare(artifact.getVersionString(), match.get().getVersionString()) > 0) {
+            // No previous artifact was recorded, or the current artifact version is higher than the one
+            // recorded previously -> replace
+
+            // Remove old version if present
+            match.ifPresent(transitiveDependencies::remove);
+            // Add the new artifact
+            transitiveDependencies.put(artifact, exclusions);
+        }
+    }
+
+    /**
+     * Returns true if both strings are null or equal.
+     */
+    static boolean nullableStringsEqual(String c1, String c2) {
+        return (c1 == null && c2 == null)
+                || (c1 != null && c1.equals(c2));
+    }
+
+    /**
+     * Do groupId, artifactId and classifier match for given artifacts?
+     */
+    static boolean gaAndClassifierMatches(ArtifactRef r1, ArtifactRef r2) {
+        return r1.getGroupId().equals(r2.getGroupId())
+                && r1.getArtifactId().equals(r2.getArtifactId())
+                && nullableStringsEqual(r1.getClassifier(), r2.getClassifier());
     }
 
     private static Map<ArtifactRef, List<ProjectRef>> getDependencyExclusions(MavenProject module) {
