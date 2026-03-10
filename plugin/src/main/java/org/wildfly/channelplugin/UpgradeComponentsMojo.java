@@ -605,7 +605,7 @@ public class UpgradeComponentsMojo extends AbstractChannelMojo {
             try {
                 rootNode = dependencyGraphBuilder.buildDependencyGraph(buildingRequest, null);
             } catch (DependencyGraphBuilderException e) {
-                throw new MojoExecutionException("Failed to compose dependency graph.");
+                throw new MojoExecutionException("Failed to compose dependency graph.", e);
             }
             CollectingDependencyNodeVisitor visitor = new CollectingDependencyNodeVisitor();
             rootNode.accept(visitor);

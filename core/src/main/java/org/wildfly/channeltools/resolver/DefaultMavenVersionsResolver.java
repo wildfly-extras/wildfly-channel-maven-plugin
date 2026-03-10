@@ -207,7 +207,7 @@ public class DefaultMavenVersionsResolver implements MavenVersionsResolver {
         locator.setErrorHandler(new DefaultServiceLocator.ErrorHandler() {
             @Override
             public void serviceCreationFailed(Class<?> type, Class<?> impl, Throwable exception) {
-                throw new RuntimeException("Failed to initiate maven repository system");
+                throw new RuntimeException("Failed to initiate maven repository system", exception);
             }
         });
         return locator.getService(RepositorySystem.class);
