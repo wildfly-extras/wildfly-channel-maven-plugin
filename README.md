@@ -225,3 +225,12 @@ Then connect to the 8000 port after you see the "Running x.y.z.TestName" message
 [INFO] Running org.wildfly.channelplugin.it.UpgradeComponentsMojoIT
 # Now connect with a debugger.
 ```
+
+### Release Steps
+
+```shell
+mvn release:prepare
+mvn release:perform
+# Verify on Nexus that validation passed, then:
+mvn mvn nxrm3:staging-move
+```
