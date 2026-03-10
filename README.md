@@ -60,6 +60,7 @@ Additional configuration - all of these are optional:
   versions overrides. All dependencies with given groupId and artifactId in all project submodules will be overridden to
   given versions. The version will be inlined in the version element. This takes preference over modifications inferred
   from the channel.
+* `doNotDowngrade`: Do not perform dependency downgrades.
 <!--
 * `injectMissingDependencies`: Inject all streams from the channel, that weren't already present in the POM file, as
   new managed dependencies. The dependency management section must already exist. This is very experimental, the point
