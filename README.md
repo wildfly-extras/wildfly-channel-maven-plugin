@@ -231,6 +231,7 @@ Then connect to the 8000 port after you see the "Running x.y.z.TestName" message
 ```shell
 mvn release:prepare
 mvn release:perform
-# Verify on Nexus that validation passed, then:
+# Verify on the Nexus wildfly-staging repo that validations passed; if so, run:
+git checkout <released-version>
 mvn mvn nxrm3:staging-move
 ```
