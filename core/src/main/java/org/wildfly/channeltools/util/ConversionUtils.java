@@ -25,6 +25,10 @@ public final class ConversionUtils {
                 a.getClassifier());
     }
 
+    public static SimpleProjectRef toProjectRef(Dependency a) {
+        return new SimpleProjectRef(a.getGroupId(), a.getArtifactId());
+    }
+
     public static List<ProjectRef> toProjectRefs(List<Exclusion> exclusions) {
         if (exclusions == null) {
             return new ArrayList<>();
