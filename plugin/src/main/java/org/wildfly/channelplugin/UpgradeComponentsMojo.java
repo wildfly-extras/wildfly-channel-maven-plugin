@@ -46,6 +46,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 import static org.wildfly.channeltools.util.ConversionUtils.toArtifactRef;
+import static org.wildfly.channeltools.util.ConversionUtils.toProjectRef;
 import static org.wildfly.channeltools.util.ConversionUtils.toProjectRefs;
 
 /**
@@ -596,7 +597,7 @@ public class UpgradeComponentsMojo extends AbstractChannelMojo {
         for (MavenProject module: projects) {
 
             // Collect exclusions from the effective POM
-            Map<ArtifactRef, List<ProjectRef>> artifactExclusions = getDependencyExclusions(module);
+            Map<ProjectRef, List<ProjectRef>> artifactExclusions = getDependencyExclusions(module);
 
             ProjectBuildingRequest buildingRequest =
                     new DefaultProjectBuildingRequest(mavenSession.getProjectBuildingRequest());
@@ -632,7 +633,7 @@ public class UpgradeComponentsMojo extends AbstractChannelMojo {
                     return;
                 }
 
-                List<ProjectRef> exclusions = artifactExclusions.getOrDefault(artifact, Collections.emptyList());
+                List<ProjectRef> exclusions = artifactExclusions.getOrDefault(artifact.asProjectRef(), Collections.emptyList());
                 HashSet<ProjectRef> exclusionsSet = new HashSet<>(exclusions);
 
                 addOrUpdateArtifact(transitiveDependencies, artifact, exclusionsSet);
@@ -685,13 +686,14 @@ public class UpgradeComponentsMojo extends AbstractChannelMojo {
                 && nullableStringsEqual(r1.getClassifier(), r2.getClassifier());
     }
 
-    private static Map<ArtifactRef, List<ProjectRef>> getDependencyExclusions(MavenProject module) {
-        Map<ArtifactRef, List<ProjectRef>> artifactExclusions = new HashMap<>();
+    private static Map<ProjectRef, List<ProjectRef>> getDependencyExclusions(MavenProject module) {
+        Map<ProjectRef, List<ProjectRef>> artifactExclusions = new HashMap<>();
         List<Dependency> managedDependencies = Collections.emptyList();
         if (module.getModel().getDependencyManagement() != null) {
             managedDependencies = module.getModel().getDependencyManagement().getDependencies();
         }
-        managedDependencies.forEach(dep -> artifactExclusions.put(toArtifactRef(dep), toProjectRefs(dep.getExclusions())));
+        managedDependencies.forEach(dep -> artifactExclusions.put(toProjectRef(dep),
+                toProjectRefs(dep.getExclusions())));
         return artifactExclusions;
     }
 
